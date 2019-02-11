@@ -5,12 +5,14 @@
 # Mainly a big cleanup of unnecessary stuff + adding the audio socket instead of file writing to disk
 
 import array, logging, socket, struct, sys, time, traceback, numpy, pygame, platform
+
 import wsclient
 
 # below some things to modify in the future
 if platform.system() == "Darwin":  # deal with MacOS X systems
     import scipy
     from scipy import signal
+
     pygame.init()
 else:
     pygame.mixer.init(12000, 16, 1, 1024)
@@ -96,6 +98,7 @@ class KiwiSDRStreamBase(object):
         self._version_major = None
         self._version_minor = None
         self._modulation = None
+
 
     def connect(self, host, port):
         self._prepare_stream(host, port, 'SND')
@@ -251,7 +254,8 @@ class KiwiSDRSoundStream(KiwiSDRStreamBase):
             self._process_iq_samples(seq, samples, rssi, gps)
         else:
             samples = self._decoder.decode(data)
-            print samples  # not really necessary but makes a linux box not reading the KiwiSDRclient.py stdout  !?
+            if platform.system() != "Windows":
+                print samples  # not really necessary but makes a linux box not reading the KiwiSDRclient.py stdout  !?
 
             # self._process_audio_samples(seq, samples, rssi)
             # uncomment the previous line for enabling file audio recording (need some modifications in directKiwi.py)
@@ -261,8 +265,8 @@ class KiwiSDRSoundStream(KiwiSDRStreamBase):
                 mono = scipy.signal.resample_poly(numpy.int16(samples), 147, 40 * 2)
                 stereo = numpy.empty([len(mono), 2], dtype=numpy.int16)
                 for i in range(len(mono)):
-                    stereo[i][0] = numpy.int16(mono[i]);
-                    stereo[i][1] = numpy.int16(mono[i]);
+                    stereo[i][0] = numpy.int16(mono[i])
+                    stereo[i][1] = numpy.int16(mono[i])
                 pygame.mixer.Channel(0).queue(pygame.sndarray.make_sound(stereo))
             else:
                 pygame.mixer.Channel(0).queue(pygame.sndarray.make_sound(numpy.array(samples, numpy.int16)))
@@ -332,14 +336,24 @@ class KiwiRecorder(KiwiSDRSoundStream):
         self.close()
         print "exiting"
 
-
     def _setup_rx_params(self):
         mod = self._options[7]
         lp_cut = int(self._options[9])
         hp_cut = int(self._options[11])
         if mod == 'am':
-            # For AM, ignore the low pass filter cutoff
-            lp_cut = -hp_cut
+            lp_cut = -5000
+            hp_cut = 5000
+        if mod == 'amn':
+            lp_cut = -2500
+            hp_cut = 2500
+        if mod == 'cw':
+            lp_cut = 300
+            hp_cut = 700
+            self._freq = self._freq - 0.5
+        if mod == 'cwn':
+            lp_cut = 470
+            hp_cut = 530
+            self._freq = self._freq - 0.5
         self.set_mod(mod, lp_cut, hp_cut, self._freq)
         if self._options[13] != "1":
             self.set_agc(on=False, gain=int(self._options[14]))
@@ -350,6 +364,7 @@ class KiwiRecorder(KiwiSDRSoundStream):
         self.set_inactivity_timeout(0)
         self.set_name('directKiwi_user')
         self.set_geo('unknown')
+
 
 if __name__ == '__main__':
     KiwiRecorder(sys.argv[1:])

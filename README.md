@@ -1,12 +1,50 @@
-# directKiwi
+# directKiwi v4.00
 
-GUI version 3.63 for Python 2.7 written by linkz using modified versions @ https://github.com/dev-zzo/kiwiclient or related fork @ https://github.com/jks-prv/kiwiclient
+This piece of software is JUST a GUI written for Python 2.7 designed to fast connect audio socket to KiwiSDR servers around the world using modified versions @ https://github.com/dev-zzo/kiwiclient or related fork @ https://github.com/jks-prv/kiwiclient
+
+Thanks to Pierre Ynard (linkfanel) for the listing of available KiwiSDR nodes used as source for the TDoA map update process (http://rx.linkfanel.net)
+
+Thanks to Marco Cogoni (IS0KYB) for allowing me the use of his SNR measurements of the KiwiSDR network (http://sibamanna.duckdns.org/sdr_map.html)
+
+## INSTALL AND RUN (on LINUX) Thanks Daniel E. for the install procedure
+
+Install python 2.7
+
+Install python-pip (search for the right package for your distro)
+
+`git clone --recursive https://github.com/llinkz/directKiwi`
+
+`cd directKiwi`
+
+`./setup.sh` (this script will install python modules)
+
+`./directKiwi.py` (note: check the shebang if it fails on your system. On my Archlinux it should be "#!/usr/bin/python2" for example)
+
+
+## INSTALL AND RUN (on MAC OS) Thanks Nicolas M. for the install procedure
+
+* REQUIREMENT 	Xcode + Homebrew (https://brew.sh/index_fr)
+
+Install Homebrew, in terminal : `/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"`
+
+Install Python 2.7, in terminal : `brew install python@2`
+
+`git clone --recursive https://github.com/llinkz/directKiwi`
+
+`cd directKiwi`
+
+`./setup.sh`  (this script will install python modules)
+
+`./directKiwi.py`
+
 
 ## LICENSE
-* This code has been written and released under the "do what the f$ck you want with it" license
+* This python GUI code has been written and released under the "do what the f$ck you want with it" license
+
 
 ## WARNING
-* this code may contain some silly procedures and dumb algorithms as I'm not a python guru, but it works so...
+* This code may contain some silly procedures and dumb algorithms as I'm not a python guru, but it almost works so...
+* This code is not optimized at all as well, will try to do my best during free time...
 
 ## TODO LIST
 * enable IQ mode with direct recording to file ?
@@ -40,41 +78,11 @@ GUI version 3.63 for Python 2.7 written by linkz using modified versions @ https
 * v3.61 : agc/mgc listbox now (previously checkbox) + xxx.proxy.kiwisdr.com hosts (out of USA) locations fixed + autosorting list  at start
 * v3.62 : fixed a TK issue than was caused by python 2.7.15 version (code was written under 2.7.14
 * v3.63 : fixed an issue with the India located remote that has few informations in kiwisdr.com/public listing page (source for updates)
-
-\\\ USAGE
-
-linux   : ./directKiwi.py
-windows : double-click on directKiwi.py
-macOS X : ./directKiwi.py ?
-
-
-
-\\\ INFO 1  -  You need python 2.7.x to run this script, it will NOT work with python 3.x !
-
-linux   : "sudo apt-get install python2.7" 
- note that python 2.x is probably already installed in your distro (type "python --version" to see which version is)
- in some cases you may also have to manually install python-tk with "sudo apt-get install python-tk"
-
-windows : https://www.python.org/ftp/python/2.7/python-2.7.amd64.msi or https://www.python.org/ftp/python/2.7/python-2.7.msi
-
-macOS X : https://www.python.org/ftp/python/2.7/python-2.7-macosx10.5.dmg or https://www.python.org/ftp/python/2.7/python-2.7-macosx10.3.dmg
-
-
-
-\\\ INFO 2  -  This script requires the following python modules : 'pygame' 'numpy' 'pygeoip' ..... (and 'scipy' for MacOS X users)
-
-linux   : "python -m pip install pygame numpy pygeoip" in terminal
- NOTE: for debian/ubuntu: "sudo apt-get install python-pygame python-numpy python-pygeoip" at once should work 
- but python-pygeoip may not install on stable debian distro, use the pip way instead for this module..
- also, if 'pip' is not already installed on your distro : "sudo apt-get install python-pip"
-
-windows : "python -m pip install pygame numpy pygeoip" in 'cmd'
-
-macOS X : "python -m pip install pygame numpy pygeoip scipy" in terminal
+* v4.00 : the GUI is now using directTDoA design, nodes are displayed on a World map instead of a table
 
 
 
 Enjoy
 
 linkz
-Apr 2018
+February 2019
