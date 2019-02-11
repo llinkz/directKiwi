@@ -254,8 +254,8 @@ class KiwiSDRSoundStream(KiwiSDRStreamBase):
             self._process_iq_samples(seq, samples, rssi, gps)
         else:
             samples = self._decoder.decode(data)
-            if platform.system() != "Windows":
-                print samples  # not really necessary but makes a linux box not reading the KiwiSDRclient.py stdout  !?
+            #if platform.system() != "Windows":
+            print samples  # not really necessary but makes a linux box not reading the KiwiSDRclient.py stdout  !?
 
             # self._process_audio_samples(seq, samples, rssi)
             # uncomment the previous line for enabling file audio recording (need some modifications in directKiwi.py)
