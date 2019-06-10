@@ -1062,7 +1062,7 @@ class MainWindow(Frame):
                 tkMessageBox.showinfo(title="UPDATE INFORMATION", message=str(gitsrctext[0][2:]) + " released !")
             else:
                 pass
-        except ImportError:
+        except (ImportError, requests.RequestException):
             print "Unable to verify version information. Sorry."
 
 
