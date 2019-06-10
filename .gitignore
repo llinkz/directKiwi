@@ -3,6 +3,5 @@ __pycache__/
 *$py.class
 
 # direct Kiwi
-directKiwi_server_list.db*
-directKiwi.cfg.bak*
-directKiwi.cfg
+directKiwi_server_list.db.bak
+directKiwi.cfg*
