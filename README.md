@@ -6,6 +6,11 @@ Thanks to Pierre Ynard (linkfanel) for the listing of available KiwiSDR nodes us
 
 Thanks to Marco Cogoni (IS0KYB) for allowing me the use of his SNR measurements of the KiwiSDR network (http://sibamanna.duckdns.org/sdr_map.html)
 
+##### Important _V5.00 update note_:
+- If you already have a personalized directKiwi.cfg file, make a backup, upgrade and copy it later in directKiwi directory, it will be converted to work with version 5.00 automaticaly at first run
+- Else, just rename directKiwi.sample.cfg to directKiwi.cfg`
+
+
 ## Stuff required to run the software:
 
 * Tk
