@@ -11,17 +11,12 @@ import socket
 import sys
 import time
 import numpy
-import pygame
-import platform
+import sounddevice
+from samplerate import Resampler
 import wsclient
 
-# below some things to modify in the future
-if platform.system() == "Darwin":  # deal with MacOS X systems
-    import scipy
-    from scipy import signal
-    pygame.init()
-else:
-    pygame.mixer.init(12000, 16, 1, 1024)
+stream = sounddevice.OutputStream(12000, 2048, channels=1, dtype='int16')
+stream.start()
 
 # IMAADPCM decoder
 stepSizeTable = (
@@ -173,12 +168,14 @@ class KiwiSDRSoundStream(KiwiSDRStreamBase):
         self._version_major = None
         self._version_minor = None
         self._modulation = None
+        self._resampler = None
 
     def set_mod(self, mod, lc, hc, freq):
         """SET Modulation."""
         mod = mod.lower()
         self._modulation = mod
-        self._send_message('SET mod=%s low_cut=%d high_cut=%d freq=%.3f' % (mod, lc, hc, freq))
+        # no audio compression parameter added (always set to no to keep the audio integrity)
+        self._send_message('SET mod=%s low_cut=%d high_cut=%d freq=%.3f compression=%s' % (mod, lc, hc, freq, 0))
 
     def set_agc(self, on=False, hang=False, thresh=-70, slope=10, decay=300, gain=50):
         """SET AGC."""
@@ -217,6 +214,8 @@ class KiwiSDRSoundStream(KiwiSDRStreamBase):
             self._set_ar_ok(int(value), 44100)
         elif name == 'sample_rate':
             self._sample_rate = float(value)
+            self._ratio = 12000 / self._sample_rate
+            self._resampler = Resampler(converter_type='sinc_best')
             self._on_sample_rate_change()
             # Optional, but is it?..
             self.set_squelch(0, 0)
@@ -253,18 +252,10 @@ class KiwiSDRSoundStream(KiwiSDRStreamBase):
     def _process_aud(self, body):
         # seq = struct.unpack('<I', body[0:4])[0]
         # smeter = struct.unpack('>H', body[4:6])[0]
-        data = body[6:]
-        samples = self._decoder.decode(data)
-        if platform.system() == "Darwin":  # deal with MacOS X systems, ugly lag but working
-            mono = scipy.signal.resample_poly(numpy.int16(samples), 147, 40 * 2)
-            stereo = numpy.empty([len(mono), 2], dtype=numpy.int16)
-            for i in range(len(mono)):
-                stereo[i][0] = numpy.int16(mono[i])
-                stereo[i][1] = numpy.int16(mono[i])
-            pygame.mixer.Channel(0).queue(pygame.sndarray.make_sound(stereo))
-        else:
-            # works fine on linux & windows
-            pygame.mixer.Channel(0).queue(pygame.sndarray.make_sound(numpy.array(samples, numpy.int16)))
+        # data = body[6:]
+        stream.write(numpy.array(
+            numpy.round(self._resampler.process(self._decoder.decode(body[6:]), ratio=self._ratio)).astype(numpy.int16),
+            dtype=numpy.int16))
 
     def _on_sample_rate_change(self):
         pass

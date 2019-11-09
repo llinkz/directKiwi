@@ -1,10 +1,8 @@
-# directKiwi v5.00
+# directKiwi v6.00
 
 This piece of software is JUST a GUI written for Python 2.7 designed to fast connect audio socket to KiwiSDR servers around the world using modified versions @ https://github.com/dev-zzo/kiwiclient or related fork @ https://github.com/jks-prv/kiwiclient
 
 Thanks to Pierre Ynard (linkfanel) for the listing of available KiwiSDR nodes used as source for the TDoA map update process (http://rx.linkfanel.net)
-
-Thanks to Marco Cogoni (IS0KYB) for allowing me the use of his SNR measurements of the KiwiSDR network (http://sibamanna.duckdns.org/sdr_map.html)
 
 ##### _Important V5.00 update note_ :
 - If you already have a personalized directKiwi.cfg file, make a backup, upgrade and copy it later in directKiwi directory, it will be converted to work with version 5.00 automaticaly at first run
@@ -14,11 +12,11 @@ Thanks to Marco Cogoni (IS0KYB) for allowing me the use of his SNR measurements 
 ## Stuff required to run the software:
 
 * Tk
-* python2-numpy
-* python2-scipy
-* python2-pygame
-* python2-requests
-* python2-pillow
+* python2-numpy (https://pypi.org/project/numpy/)
+* python-sounddevice (https://pypi.org/project/sounddevice/)
+* libsamplerate (https://pypi.org/project/samplerate/)
+* python2-requests (https://pypi.org/project/requests/)
+* python2-pillow (https://pypi.org/project/Pillow/)
 
 ## INSTALL AND RUN (on LINUX) Thanks Daniel E. for the install procedure
 
@@ -55,7 +53,6 @@ Install Python 2.7, in terminal : `brew install python@2`
 ## LICENSE
 * This python GUI code has been written and released under the "do what the f$ck you want with it" license
 
-
 ## WARNING
 * This code may contain some silly procedures and dumb algorithms as I'm not a python guru, but it almost works so...
 * This code is not optimized at all as well, will try to do my best during free time...
@@ -65,6 +62,8 @@ Install Python 2.7, in terminal : `brew install python@2`
 
 ## CHANGE LOG 
 
+* v6.00 : IS0KYB microkiwi_waterfall script added (SNR measurement + waterfall display), IS0KYB SNR website source is not used anymore + code clean up
+* v5.10 : no more pygame & scipy (for MacOS), sounddevice python module + libsamplerate instead -> works with 20kHz KiwiSDRs + no audio compression set by default
 * v5.00 : code clean up + cfg file now in json format + faster way to switch between nodes (left click only) - no more s-meter - icon size change possible
 * v4.00 : the GUI is now using directTDoA design, nodes are displayed on a World map instead of a table
 * v3.63 : fixed an issue with the India located remote that has few informations in kiwisdr.com/public listing page (source for updates)
