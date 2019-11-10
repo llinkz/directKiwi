@@ -29,7 +29,7 @@ from PIL import Image, ImageTk
 
 import requests
 
-VERSION = "directKiwi v6.00"
+VERSION = "directKiwi v6.10"
 
 
 class CheckUpdate(threading.Thread):
@@ -279,11 +279,11 @@ class CheckSnr(threading.Thread):
         socket2_connect = int
         try:
             socket2_connect = subprocess.Popen(
-                [sys.executable, 'microkiwi_waterfall.py', '-s', HOST.rsplit("$", 8)[1].rsplit(":", 2)[0], '-p',
-                 HOST.rsplit("$", 8)[1].rsplit(":", 2)[1], '-f', 'wf.bin'], stdout=PIPE, shell=False)
+                [sys.executable, 'microkiwi_waterfall.py', '-s', HOST.rsplit("$", 10)[1].rsplit(":", 2)[0], '-p',
+                 HOST.rsplit("$", 10)[1].rsplit(":", 2)[1], '-f', 'wf.bin'], stdout=PIPE, shell=False)
         except ValueError:
             print "Error: unable to retrieve datas from the node."
-        APP.window2.writelog("Retrieving " + str(HOST.rsplit("$", 8)[1].rsplit(":", 2)[0]) + " waterfall , please wait")
+        APP.window2.writelog("Retrieving " + str(HOST.rsplit("$", 10)[1].rsplit(":", 2)[0]) + " waterfall, please wait")
         while True:
             line = socket2_connect.stdout.readline()
             if "received sample" in line:
@@ -309,8 +309,8 @@ class StartKiwiSDRclient(threading.Thread):
             #  1= AGC (on)  50=Manual Gain (dB) 0=Hang (off)  -100=Threshold (dB) 6=Slope (dB) 1000=Decay (ms)
             #  -L and -H are low & high pass demod filters settings
             socket_connect = subprocess.Popen(
-                [sys.executable, 'KiwiSDRclient.py', '-s', HOST.rsplit("$", 8)[1].rsplit(":", 2)[0], '-p',
-                 HOST.rsplit("$", 8)[1].rsplit(":", 2)[1], '-f', FREQUENCY, '-m', MODE, '-L', str(LP_CUT),
+                [sys.executable, 'KiwiSDRclient.py', '-s', HOST.rsplit("$", 10)[1].rsplit(":", 2)[0], '-p',
+                 HOST.rsplit("$", 10)[1].rsplit(":", 2)[1], '-f', FREQUENCY, '-m', MODE, '-L', str(LP_CUT),
                  '-H', str(HP_CUT), '-g', str(AGC), str(MGAIN), str(HANG), str(THRESHOLD), str(SLOPE),
                  str(DECAY)], stdout=PIPE, shell=False)
             CLIENT_PID = socket_connect.pid
@@ -359,7 +359,7 @@ class FillMapWithNodes(object):
     def add_point(self, node_index, node_color, db_data):
         """ Process that add node icons over the World map. """
         # mykeys = ['url', 'mac', 'id', 'name', 'users', 'usersmax', 'gps', 'snr']
-        mykeys = ['mac', 'url', 'gps', 'fixes', 'id', 'name', 'users', 'usersmax', 'snr']
+        mykeys = ['mac', 'url', 'gps', 'fixes', 'id', 'name', 'users', 'usersmax', 'snr', 'lat', 'lon']
         node_lat = self.convert_lat(db_data[node_index]["lat"])
         node_lon = self.convert_lon(db_data[node_index]["lon"])
         node_tag = str('$'.join([db_data[node_index][x] for x in mykeys]))
@@ -451,22 +451,22 @@ class ZoomAdvanced(Frame):
         else:
             try:  # check if the node is answering
                 chktimeout = 1  # timeout of the node check
-                checkthenode = requests.get("http://" + str(HOST).rsplit("$", 8)[1] + "/status", timeout=chktimeout)
+                checkthenode = requests.get("http://" + str(HOST).rsplit("$", 10)[1] + "/status", timeout=chktimeout)
                 infonodes = checkthenode.text.split("\n")
                 if len(infonodes) == 22 and "status" in infonodes[0]:
                     try:
                         if infonodes[6].rsplit("=", 2)[1] == infonodes[7].rsplit("=", 2)[1]:  # users Vs. users_max
-                            APP.window2.writelog(" " + str(HOST).rsplit("$", 8)[1].rsplit(":", 2)[0] + " is full.")
+                            APP.window2.writelog(" " + str(HOST).rsplit("$", 10)[1].rsplit(":", 2)[0] + " is full.")
                         elif infonodes[1].rsplit("=", 2)[1] == "yes":  # offline=no/yes
-                            APP.window2.writelog(" " + str(HOST).rsplit("$", 8)[1].rsplit(":", 2)[0] + " is offline.")
+                            APP.window2.writelog(" " + str(HOST).rsplit("$", 10)[1].rsplit(":", 2)[0] + " is offline.")
                         else:
                             permit_web = "yes"
                     except ValueError:
                         pass
                 else:
-                    APP.window2.writelog("Sorry " + str(HOST).rsplit("$", 8)[1].rsplit(":", 2)[0] + " is unreachable.")
+                    APP.window2.writelog("Sorry " + str(HOST).rsplit("$", 10)[1].rsplit(":", 2)[0] + " is unreachable.")
             except requests.RequestException:
-                APP.window2.writelog("Sorry " + str(HOST).rsplit("$", 8)[1].rsplit(":", 2)[0] + " has problems.")
+                APP.window2.writelog("Sorry " + str(HOST).rsplit("$", 10)[1].rsplit(":", 2)[0] + " has problems.")
             if permit_web == "yes":
                 if LISTENMODE == "0":
                     StartKiwiSDRclient().start()
@@ -478,10 +478,10 @@ class ZoomAdvanced(Frame):
                         pass
                 APP.window2.writelog(" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ")
                 APP.window2.writelog(
-                    "[ " + str(HOST).rsplit("$", 8)[1].rsplit(":", 2)[0] + " / " + FREQUENCY + " kHz / " + str(
+                    "[ " + str(HOST).rsplit("$", 10)[1].rsplit(":", 2)[0] + " / " + FREQUENCY + " kHz / " + str(
                         MODE).upper() + " / " + str(HP_CUT - LP_CUT) + "Hz ]")
-                APP.window2.writelog("[ " + str(HOST).rsplit("$", 8)[5].replace("_", " ") + " ]")
-                APP.title(str(VERSION) + " - [ " + str(HOST).rsplit("$", 8)[1].rsplit(":", 2)[
+                APP.window2.writelog("[ " + str(HOST).rsplit("$", 10)[5].replace("_", " ") + " ]")
+                APP.title(str(VERSION) + " - [ " + str(HOST).rsplit("$", 10)[1].rsplit(":", 2)[
                     0] + " / " + FREQUENCY + " kHz / " + str(MODE).upper() + " / " + str(HP_CUT - LP_CUT) + "Hz ]")
 
     def onclickright(self, event):
@@ -490,15 +490,15 @@ class ZoomAdvanced(Frame):
         HOST = self.canvas.gettags(self.canvas.find_withtag(CURRENT))[0]
         menu = Menu(self, tearoff=0, fg="black", bg="grey", font='TkFixedFont 7')
         permit_web = "no"
-        n_field = HOST.rsplit("$", 8)
+        n_field = HOST.rsplit("$", 10)
         if n_field[0] in WHITELIST:
             nodecolor = FAVCOLOR
         else:
             nodecolor = STDCOLOR
-        #  HOST.rsplit("$", 8)[#] <<
+        #  HOST.rsplit("$", 10)[#] <<
         #  0=url  1=mac  2=id  3=name  4=users  5=users max  6=GPS fix/min 7=SNR 0-30 MHz
-        # mykeys = ['mac', 'url', 'gps', 'fixes', 'id', 'name', 'users', usersmax', 'snr']
-        #            0      1      2      3        4     5       6       7           8
+        # mykeys = ['mac', 'url', 'gps', 'fixes', 'id', 'name', 'users', usersmax', 'snr', 'lat', 'lon']
+        #            0      1      2      3        4     5       6       7           8      9      10
         font_snr = 'TkFixedFont 7'
         FREQUENCY = APP.window2.entry1.get()
         try:  # check if the node is answering
@@ -541,11 +541,16 @@ class ZoomAdvanced(Frame):
         if permit_web == "yes" and FREQUENCY != "" and 5 < float(FREQUENCY) < 30000:
             try:
                 menu.add_command(
-                    label="Open \"" + n_field[1] + "/f=" + str(FREQUENCY) + str(
-                        MODE).lower() + "z8\" in browser",
+                    label="Open in Web browser",
                     state=NORMAL, background=(self.color_variant(nodecolor, (int(n_field[8]) - 30) * 10)),
                     foreground=self.get_font_color((self.color_variant("#FFFF00", (int(n_field[8]) - 30) * 10))),
-                    command=self.openinbrowser)
+                    command=lambda : self.openinbrowser(0))
+                if int(n_field[2]) == 1:
+                    menu.add_command(
+                        label="Open in Web browser with TDoA extension loaded",
+                        state=NORMAL, background=(self.color_variant(nodecolor, (int(n_field[8]) - 30) * 10)),
+                        foreground=self.get_font_color((self.color_variant("#FFFF00", (int(n_field[8]) - 30) * 10))),
+                        command=lambda: self.openinbrowser(1))
             except ImportError:
                 pass
         if int(n_field[2]) == 1:
@@ -607,38 +612,40 @@ class ZoomAdvanced(Frame):
     @staticmethod
     def addfavorite():
         """ Add Favorite node submenu entry. """
-        WHITELIST.append(HOST.rsplit("$", 8)[0])
+        WHITELIST.append(HOST.rsplit("$", 10)[0])
         SaveCfg().save_cfg("nodes", "whitelist", WHITELIST)
         Restart().run()
 
     @staticmethod
     def remfavorite():
         """ Remove Favorite node submenu entry. """
-        WHITELIST.remove(HOST.rsplit("$", 8)[0])
+        WHITELIST.remove(HOST.rsplit("$", 10)[0])
         SaveCfg().save_cfg("nodes", "whitelist", WHITELIST)
         Restart().run()
 
     @staticmethod
     def addblacklist():
         """ Add Blacklist node submenu entry. """
-        BLACKLIST.append(HOST.rsplit("$", 8)[0])
+        BLACKLIST.append(HOST.rsplit("$", 10)[0])
         SaveCfg().save_cfg("nodes", "blacklist", BLACKLIST)
         Restart().run()
 
     @staticmethod
     def remblacklist():
         """ Remove Blacklist node submenu entry. """
-        BLACKLIST.remove(HOST.rsplit("$", 8)[0])
+        BLACKLIST.remove(HOST.rsplit("$", 10)[0])
         SaveCfg().save_cfg("nodes", "blacklist", BLACKLIST)
         Restart().run()
 
     @staticmethod
-    def openinbrowser():
+    def openinbrowser(mode):
         """ Browser call with selected FREQUENCY to node (fixed zoom level at 8). """
-        if FREQUENCY != 10000:
-            url = "http://" + str(HOST).rsplit("$", 8)[1] + "/?f=" + str(FREQUENCY) + str(MODE).lower() + "z8"
+        if mode == 0:
+            url = "http://" + str(HOST).rsplit("$", 10)[1] + "/?f=" + str(FREQUENCY) + str(MODE).lower() + "z8"
         else:
-            url = "http://" + str(HOST).rsplit("$", 8)[1]
+            url = "http://" + str(HOST).rsplit("$", 10)[1] + "/?f=" + str(FREQUENCY) + str(
+                MODE).lower() + "z8&ext=tdoa,lat:" + str(HOST).rsplit("$", 10)[9] + ",lon:" + str(HOST).rsplit("$", 10)[
+                      10] + ",z:5," + str(HOST).rsplit("$", 10)[4]
         webbrowser.open_new(url)
 
     @staticmethod

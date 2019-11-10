@@ -62,6 +62,7 @@ Install Python 2.7, in terminal : `brew install python@2`
 
 ## CHANGE LOG 
 
+* v6.10 : adding a line to open Web Browser with pre-set TDoA extension loaded (requested by user)
 * v6.00 : IS0KYB microkiwi_waterfall script added (SNR measurement + waterfall display), IS0KYB SNR website source is not used anymore + code clean up
 * v5.10 : no more pygame & scipy (for MacOS), sounddevice python module + libsamplerate instead -> works with 20kHz KiwiSDRs + no audio compression set by default
 * v5.00 : code clean up + cfg file now in json format + faster way to switch between nodes (left click only) - no more s-meter - icon size change possible
