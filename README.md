@@ -1,26 +1,35 @@
-# directKiwi v6.10
+# directKiwi v7.00
 
-This piece of software is JUST a GUI written for Python 2.7 designed to fast connect audio socket to KiwiSDR servers around the world using modified versions @ https://github.com/dev-zzo/kiwiclient or related fork @ https://github.com/jks-prv/kiwiclient
+This piece of software is JUST a GUI written for Python 2/3 designed to fast connect audio socket to KiwiSDR servers around the world using modified versions @ https://github.com/dev-zzo/kiwiclient or related fork @ https://github.com/jks-prv/kiwiclient
 
 Thanks to Pierre Ynard (linkfanel) for the listing of available KiwiSDR nodes used as source for the TDoA map update process (http://rx.linkfanel.net)
-
-##### _Important V5.00 update note_ :
-- If you already have a personalized directKiwi.cfg file, make a backup, upgrade and copy it later in directKiwi directory, it will be converted to work with version 5.00 automaticaly at first run
-- Else, just rename directKiwi.blank.cfg to directKiwi.cfg
-
 
 ## Stuff required to run the software:
 
 * Tk
-* python2-numpy (https://pypi.org/project/numpy/)
-* python-sounddevice (https://pypi.org/project/sounddevice/)
+* numpy (https://pypi.org/project/numpy/)
+* sounddevice (https://pypi.org/project/sounddevice/)
 * libsamplerate (https://pypi.org/project/samplerate/)
-* python2-requests (https://pypi.org/project/requests/)
-* python2-pillow (https://pypi.org/project/Pillow/)
+* requests (https://pypi.org/project/requests/)
+* pillow (https://pypi.org/project/Pillow/)
+* matplotlib (https://pypi.org/project/matplotlib/)
+
+## INSTALL AND RUN (on WINDOWS)
+
+Install python 2 or 3
+
+Install python modules, in CMD: `python -m pip install numpy pillow requests sounddevice samplerate matplotlib`
+
+If you don't have git installed, just download `https://github.com/llinkz/directKiwi/archive/master.zip` and unzip the package somewhere
+
+else in 'Git Bash': `git clone --recursive https://github.com/llinkz/directKiwi`
+
+From package directory, in CMD: `python directKiwi.py`
+
 
 ## INSTALL AND RUN (on LINUX) Thanks Daniel E. for the install procedure
 
-Install python 2.7
+Install python 2 or 3
 
 Install python-pip (search for the right package for your distro)
 
@@ -39,7 +48,7 @@ Install python-pip (search for the right package for your distro)
 
 Install Homebrew, in terminal : `/usr/bin/ruby -e "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/master/install)"`
 
-Install Python 2.7, in terminal : `brew install python@2`
+Install Python 2 or 3, in terminal : `brew install python@#`
 
 `git clone --recursive https://github.com/llinkz/directKiwi`
 
@@ -50,18 +59,27 @@ Install Python 2.7, in terminal : `brew install python@2`
 `./directKiwi.py`
 
 
+## TIP
+* Zoom function is actually disabled because it has some bugs, but if you need the feature active just uncomment
+
+`line 453 for Windows` 
+
+`lines 454 + 455 for Linux (and MacOS ?)`
+
 ## LICENSE
 * This python GUI code has been written and released under the "do what the f$ck you want with it" license
 
 ## WARNING
 * This code may contain some silly procedures and dumb algorithms as I'm not a python guru, but it almost works so...
 * This code is not optimized at all as well, will try to do my best during free time...
+* This code has been tested on Raspberry Pi B+ but there was some issues with a third-party USB sound card, so it was not working here.
 
 ## TODO LIST
 * enable IQ mode with direct recording to file ?
+* real-time management of the KiwiSDR (freq change, demodulation change, AGC/MGC change..  work in progress)
 
 ## CHANGE LOG 
-
+* v7.00 : directKiwi now uses same GUI as directTDoA - python 3 compatibility added - bug fixed on the map update due to some format modifications on the website sources
 * v6.10 : adding a line to open Web Browser with pre-set TDoA extension loaded (requested by user)
 * v6.00 : IS0KYB microkiwi_waterfall script added (SNR measurement + waterfall display), IS0KYB SNR website source is not used anymore + code clean up
 * v5.10 : no more pygame & scipy (for MacOS), sounddevice python module + libsamplerate instead -> works with 20kHz KiwiSDRs + no audio compression set by default
@@ -101,4 +119,4 @@ Enjoy
 
 linkz
 
-June 2019 update
+April 2020 update
