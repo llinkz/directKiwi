@@ -2,55 +2,126 @@
 # -*- coding: utf-8 -*-
 """ DirectKiwi python code. """
 
+# python 2/3 compatibility
+from __future__ import print_function
+from __future__ import division
+# from __future__ import absolute_import
+
 import codecs
 import json
 import os
+import re
 import signal
 import subprocess
 from subprocess import PIPE
 import sys
 import threading
 import time
-import tkFileDialog
-import tkMessageBox
-import ttk
-import unicodedata
 import webbrowser
-import re
-from collections import OrderedDict
-
-from Tkinter import Tk, Label, Button, Entry, Text, Menu, Scale, END
-from Tkinter import Scrollbar, Frame, Message, Canvas, CURRENT, NORMAL
-from collections import OrderedDict
 from shutil import copyfile
-from tkColorChooser import askcolor
-
+from collections import OrderedDict
+import requests
 from PIL import Image, ImageTk
 
-import requests
+# python 2/3 compatibility
+if sys.version_info[0] == 2:
+    import tkFileDialog
+    import tkMessageBox
+    import ttk
+    from Tkinter import Checkbutton, END, CURRENT, NORMAL, Message, Scale, IntVar, Listbox
+    from Tkinter import Entry, Text, Menu, Label, Button, Frame, Tk, Canvas, PhotoImage
+    from tkColorChooser import askcolor
+    from tkSimpleDialog import askstring, askinteger
+else:
+    import tkinter.filedialog as tkFileDialog
+    import tkinter.messagebox as tkMessageBox
+    from tkinter import Checkbutton, END, CURRENT, NORMAL, Message, Scale, IntVar, Listbox
+    from tkinter import Entry, Text, Menu, Label, Button, Frame, Tk, Canvas, PhotoImage, ttk
+    from tkinter.colorchooser import askcolor
+    from tkinter.simpledialog import askstring, askinteger
 
-VERSION = "directKiwi v6.10"
+
+VERSION = "directKiwi v7.00"
+
+
+class Restart(object):
+    """ GUI Restart routine. """
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def run():
+        os.execv(sys.executable, [sys.executable] + sys.argv)  # restart directKiwi.py
+
+
+class ReadCfg(object):
+    """ DirectKiwi configuration file read process. """
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def read_cfg():
+        global LP_CUT, HP_CUT, AGC, HANG, MGAIN, THRESHOLD, SLOPE, DECAY
+        global CFG, DX0, DY0, DX1, DY1, DMAP, MAPFL, WHITELIST, BLACKLIST
+        global STDCOLOR, FAVCOLOR, BLKCOLOR, ICONSIZE, ICONTYPE, HIGHLIGHT
+        global BGC, FGC, GRAD, THRES, CONS_B, CONS_F, STAT_B, STAT_F
+        # Read the config file format and declare variables
+        with open('directKiwi.cfg', 'r') as config_file:
+            CFG = json.load(config_file, object_pairs_hook=OrderedDict)
+        # demod block
+        LP_CUT, HP_CUT, AGC = CFG["demod"]["lp_cut"], CFG["demod"]["hp_cut"], CFG["demod"]["agc"]
+        HANG, MGAIN = CFG["demod"]["hang"], CFG["demod"]["mgain"]
+        THRESHOLD, SLOPE, DECAY = CFG["demod"]["thres"], CFG["demod"]["slope"], CFG["demod"]["decay"]
+        # map block
+        DX0, DX1 = CFG["map"]["x0"], CFG["map"]["x1"]
+        DY0, DY1 = CFG["map"]["y0"], CFG["map"]["y1"]
+        DMAP, MAPFL, ICONSIZE = CFG["map"]["file"], CFG["map"]["mapfl"], CFG["map"]["iconsize"]
+        STDCOLOR, FAVCOLOR, BLKCOLOR = CFG["map"]["std"], CFG["map"]["fav"], CFG["map"]["blk"]
+        HIGHLIGHT, ICONTYPE = CFG["map"]["hlt"], CFG["map"]["icontype"]
+        # guicolors block
+        BGC, FGC = CFG["guicolors"]["main_b"], CFG["guicolors"]["main_f"]
+        CONS_B, CONS_F = CFG["guicolors"]["cons_b"], CFG["guicolors"]["cons_f"]
+        STAT_B, STAT_F = CFG["guicolors"]["stat_b"], CFG["guicolors"]["stat_f"]
+        THRES, GRAD = CFG["guicolors"]["thres"], CFG["guicolors"]["grad"]
+        # nodes block
+        WHITELIST, BLACKLIST = CFG["nodes"]["whitelist"], CFG["nodes"]["blacklist"]
+
+
+class SaveCfg(object):
+    """ DirectTDoA configuration file save process. """
+
+    def __init__(self):
+        pass
+
+    @staticmethod
+    def save_cfg(cat, field, field_value):
+        # Sets the new parameter value to the right category
+        CFG[cat][field] = field_value
+        # Now save the config file
+        with open('directKiwi.cfg', 'w') as config_file:
+            json.dump(CFG, config_file, indent=2)
 
 
 class CheckUpdate(threading.Thread):
-    """ Check if the sources are up before running the RunUpdate process """
+    """ Check if the sources are up before running the RunUpdate process. """
 
-    def __init__(self, parent=None):
+    def __init__(self):
         super(CheckUpdate, self).__init__()
-        self.parent = parent
 
     def run(self):
         chk_linkf = 0
-        APP.window2.writelog("Map Update process started ... Checking if website source is up, wait a moment ...")
+        APP.gui.writelog("Checking if rx.linkfanel.net is up ...")
         try:
             requests.get("http://rx.linkfanel.net/kiwisdr_com.js", timeout=2)
             requests.get("http://rx.linkfanel.net/snr.js", timeout=2)
             chk_linkf = 1
         except requests.ConnectionError:
-            APP.window2.writelog("Pierre's website is not reachable. Node listing update is not possible, try later.")
-            APP.window2.update_button.configure(state="normal")
+            APP.gui.writelog("Sorry Pierre's website is not reachable. try again later.")
+            APP.gui.update_button.configure(state="normal")
         if chk_linkf == 1:
-            APP.window2.writelog("OK looks good, map update in progress...please wait until software restart..")
+            APP.gui.writelog("Ok looks good, KiwiSDR node listing update started ...")
             RunUpdate().run()
 
 
@@ -66,186 +137,139 @@ class RunUpdate(threading.Thread):
             # Get the node list from linkfanel website
             nodelist = requests.get("http://rx.linkfanel.net/kiwisdr_com.js")
             # Convert that listing to fit a JSON format (also removing bad/incomplete node entries)
-            kiwilist = re.sub(r"{\n(.*?),\n(.*?),\n\t\},", "", re.sub(r"},\n]\n;", "\t}\n]", re.sub(
-                r"(//.+\n){4}\n.+", "", nodelist.text, 0), 0), 0)
+            kiwilist = re.sub(r"{\n(.*?),\n(.*?),\n\t\},", "",
+                              re.sub(r"},\n]\n;", "\t}\n]", re.sub(r"(//.+\n)+\n.+", "", nodelist.text, 0), 0), 0)
             json_data = json.loads(kiwilist)
             # Get the SNR list from linkfanel website
             snrlist = requests.get("http://rx.linkfanel.net/snr.js")
-            snrvar = snrlist.text
             # Convert that listing to fit a JSON format
-            snrlist = snrvar.replace('var snr = ', '').replace(':', ':\"').replace(',', '\",').replace(',\n};', '\n}')
+            snrlist = re.sub(r"(//.+\n){2}\n.+", "", re.sub(r",\n}\n;", "\t}\n", snrlist.text, 0), 0)  # from fev 2020
             json_data2 = json.loads(snrlist)
             # Remove the existing node database
             if os.path.isfile('directKiwi_server_list.db'):
                 os.remove('directKiwi_server_list.db')
             # Open a new database
-            with codecs.open('directKiwi_server_list.db', 'w', encoding='utf8') as db_file:
+            with codecs.open('directKiwi_server_list.db', 'wb', encoding='utf8') as db_file:
                 db_file.write("[\n")
                 # Parse linkfanel listing, line per line
                 for i in range(len(json_data)):
-                    # Adding a display in the console window, to be sure something happens (displaying * for each node)
-                    APP.window2.console_window.insert('end -1 lines', "*")
-                    APP.window2.console_window.see('end')
-                    if json_data[i]['tdoa_id'] == '':
-                        node_id = json_data[i]['url'].split('//', 1)[1].split(':', 1)[0]
-                        try:
-                            # Search for an IP in the hostname, becomes the node ID name if OK
-                            ipfield = re.search(r'\b((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.'
-                                                r'(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.'
-                                                r'(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)\.'
-                                                r'(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?))\b'
-                                                , json_data[i]['url'].split('//', 1)[1].split(':', 1)[0])
-                            node_id = str(ipfield.group(1))
-                        except:
-                            pass
-                        try:
-                            # Search for a Hamcall in the name, becomes the node ID name if OK
-                            hamcallfield = re.search(
-                                r"(.*)(\s|,|/|^)([A-Za-z]{1,2}[0-9][A-Za-z]{1,3})(\s|,|/|@|-)(.*)",
-                                json_data[i]['name'])
-                            node_id = hamcallfield.group(3).upper()
-                        except:
-                            pass
-                    else:
-                        # Else we are using the TDoA field entry set by the KiwiSDR hosters
-                        node_id = json_data[i]['tdoa_id']
+                    # Adding display in the console window (* char for each node)
+                    APP.gui.console_window.insert('end -1 lines', "*")
+                    APP.gui.console_window.see('end')
+                    time.sleep(0.005)
                     try:
-                        # Parse the geographical coordinates to place the node at the right place on World map
+                        # Parse the geographical coordinates
                         gpsfield = re.search(r'([-+]?[0-9]{1,2}(\.[0-9]*)?)(,| ) '
                                              r'?([-+]?[0-9]{1,3}(\.[0-9]*))?', json_data[i]['gps'][1:-1])
                         nodelat = gpsfield.group(1)
                         nodelon = gpsfield.group(4)
                     except:
-                        # For admins not respecting KiwiSDR admin page GPS field format (nn.nnnnnn, nn.nnnnnn)
-                        # => nodes will be shown at World center, as it could make the update process fail
-                        print "*** Error reading <gps> field : This node will be displayed at 0N 0E position >>"
+                        # For admins not respecting GPS field format (nn.nnnnnn, nn.nnnnnn)
+                        # => nodes will be shown at 0°LAT 0°LON
+                        print("*** Error reading <gps> field")
                         nodelat = nodelon = "0"
-                    if "GPS" in json_data[i]['sdr_hw']:
-                        gps_status = 1
-                    else:
-                        gps_status = 0
                     # Now create a json-type line for the kiwiSDR node listing
                     try:
+                        # Check if node has been measured by linkfanel's SNR script
+                        try:
+                            snr_search = str(int(round(float(json_data2[json_data[i]['id']]))))
+                        except KeyError:
+                            snr_search = "15"
                         nodeinfo = dict(
                             mac=json_data[i]['id'],
                             url=json_data[i]['url'].split('//', 1)[1],
-                            gps=str(gps_status),
-                            fixes=json_data[i]['fixes_min'],
-                            id=node_id,
                             lat=nodelat,
                             lon=nodelon,
-                            name=unicodedata.normalize("NFKD", json_data[i]["name"]).encode("ascii", "ignore").replace(
-                                "\"", "").replace(" ", "_").replace("!", "_"),
-                            users=json_data[i]['users'],
-                            usersmax=json_data[i]['users_max'],
-                            snr=str(int(round(float(json_data2[json_data[i]['id']]))))
+                            snr=snr_search
                         )
-                        ordered_dict = ['mac', 'url', 'gps', 'fixes', 'id', 'lat', 'lon', 'name', 'users', 'usersmax',
-                                        'snr']
+                        ordered_dict = ['mac', 'url', 'snr', 'lat', 'lon']
                         nodelist = [(key, nodeinfo[key]) for key in ordered_dict]
                         nodeinfo = OrderedDict(nodelist)
                         json1 = json.dumps(nodeinfo, ensure_ascii=False)
                         db_file.write(json1 + ",\n")
-                    except:
+                    except Exception as node_error:
+                        print(str(node_error))
                         pass
-                else:
-                    pass
-                # Here is the hardcode for my own KiwiSDR node, because it's not public
-                db_file.write(
-                    '{"mac": "04a316df1bca", "url": "linkz.ddns.net:8073", "gps": "1", "fixes": "30", "id": "linkz", \
-"lat": "45.4", "lon": "5.3", "name": "directKiwi_GUI_developer,_French_Alps", "users": "0", \
-"usersmax": "4", "snr": "30"}\n]')
+                db_file.seek(-2, os.SEEK_END)
+                db_file.truncate()
+                db_file.write("\n]")
                 db_file.close()
                 # If update process finish normally, we can make a backup copy of the server listing
                 copyfile("directKiwi_server_list.db", "directKiwi_server_list.db.bak")
                 # Then we restart the GUI
-                Restart().run()
-        except Exception as update_Error:
-            print "UPDATE FAIL, sorry => " + str(update_Error)
+                APP.gui.console_window.delete('end -1c linestart', END)
+                APP.gui.console_window.insert('end', '\n')
+                APP.gui.writelog("The KiwiSDR listing update has been successfully completed.")
+        except ValueError as update_error:
+            APP.gui.console_window.delete('end -1c linestart', END)
+            APP.gui.console_window.insert('end', '\n')
+            APP.gui.writelog("UPDATE FAIL - ERROR : " + str(update_error))
             copyfile("directKiwi_server_list.db.bak", "directKiwi_server_list.db")
+        APP.gui.redraw()
+        APP.gui.update_button.configure(state="normal")
 
 
-class ReadCfg(object):
-    """ DirectKiwi configuration file read process. """
+class CheckSnr(threading.Thread):
+    """ SNR check process. """
 
-    def __init__(self):
-        pass
+    def __init__(self, serverport):
+        threading.Thread.__init__(self)
+        self.s_host = serverport.rsplit(":")[0]
+        self.s_port = serverport.rsplit(":")[1]
 
-    def __str__(self):
-        return self.__class__.__name__
-
-    @staticmethod
-    def read_cfg():
-        """ DirectKiwi configuration file read process. """
-        global CFG, DX0, DY0, DX1, DY1, DMAP, MAPFL, WHITELIST, BLACKLIST, STDCOLOR, FAVCOLOR, BLKCOLOR, ICONSIZE
-        global LP_CUT, HP_CUT, AGC, HANG, MGAIN, THRESHOLD, SLOPE, DECAY
+    def run(self):
+        """ SNR check process. """
         try:
-            # Read the config file v5.0 format and declare variables
-            with open('directKiwi.cfg', 'r') as config_file:
-                CFG = json.load(config_file, object_pairs_hook=OrderedDict)
-            DX0, DX1, DY0, DY1 = CFG["map"]["x0"], CFG["map"]["x1"], CFG["map"]["y0"], CFG["map"]["y1"]
-            DMAP, MAPFL, ICONSIZE = CFG["map"]["file"], CFG["map"]["mapfl"], CFG["map"]["iconsize"]
-            STDCOLOR, FAVCOLOR, BLKCOLOR = CFG["map"]["std"], CFG["map"]["fav"], CFG["map"]["blk"]
-            LP_CUT, HP_CUT, AGC = CFG["demod"]["lp_cut"], CFG["demod"]["hp_cut"], CFG["demod"]["agc"]
-            HANG, MGAIN = CFG["demod"]["hang"], CFG["demod"]["mgain"]
-            THRESHOLD, SLOPE, DECAY = CFG["demod"]["thres"], CFG["demod"]["slope"], CFG["demod"]["decay"]
-            WHITELIST, BLACKLIST = CFG["nodes"]["whitelist"], CFG["nodes"]["blacklist"]
-        except (ImportError, ValueError):
-            # If an old config file format is detected, convert it to v5.0 format
-            with open('directKiwi.cfg', "r") as old_config_file:
-                configline = old_config_file.readlines()
-                CFG = {'map': {}, 'demod': {}, 'nodes': {}}
-                CFG["map"]["iconsize"] = 5
-                CFG["map"]["x0"] = configline[3].split(',')[0]
-                CFG["map"]["x1"] = configline[3].split(',')[2]
-                CFG["map"]["y0"] = configline[3].split(',')[1]
-                CFG["map"]["y1"] = configline[3].replace("\n", "").split(',')[3]
-                CFG["map"]["file"] = configline[5].split('\n')[0]
-                CFG["map"]["mapfl"] = int(configline[7].replace("\n", "")[0])
-                CFG["map"]["std"] = configline[13].replace("\n", "").split(',')[0]
-                CFG["map"]["fav"] = configline[13].replace("\n", "").split(',')[1]
-                CFG["map"]["blk"] = configline[13].replace("\n", "").split(',')[2]
-                CFG["demod"]["lp_cut"] = int(configline[15].split(',')[0])
-                CFG["demod"]["hp_cut"] = int(configline[15].split(',')[1])
-                CFG["demod"]["agc"] = int(configline[15].split(',')[2])
-                CFG["demod"]["hang"] = int(configline[15].split(',')[3])
-                CFG["demod"]["mgain"] = int(configline[15].split(',')[4])
-                CFG["demod"]["thres"] = int(configline[15].split(',')[5])
-                CFG["demod"]["slope"] = int(configline[15].split(',')[6])
-                CFG["demod"]["decay"] = int(configline[15].split(',')[7])
-                if configline[9] == "\n":
-                    CFG["nodes"]["whitelist"] = []
-                else:
-                    CFG["nodes"]["whitelist"] = configline[9].replace("\n", "").split(',')
-                if configline[11] == "\n":
-                    CFG["nodes"]["blacklist"] = []
-                else:
-                    CFG["nodes"]["blacklist"] = configline[11].replace("\n", "").split(',')
-                copyfile("directKiwi.cfg", "directKiwi.do-not-use-anymore.cfg")
-            with open('directKiwi.cfg', 'w') as config_file:
-                json.dump(OrderedDict(sorted(CFG.items(), key=lambda t: t[0])), config_file, indent=2)
-            sys.exit("v4.00 configuration file format has been converted to v5.00 one.\nRestart the GUI now")
+            socket2_connect = subprocess.Popen(
+                [sys.executable, 'kiwiclient' + os.sep + 'microkiwi_waterfall.py', '-s', self.s_host, '-p',
+                 self.s_port], stdout=PIPE, shell=False)
+            APP.gui.writelog("Retrieving " + self.s_host + " waterfall, please wait")
+            while True:
+                snr_output = socket2_connect.stdout.readline()
+                if b"received sample" in snr_output:
+                    APP.gui.console_window.insert('end -1c', '.')
+                if b"SNR" in snr_output:
+                    APP.gui.console_window.delete('end -1c linestart', END)
+                    APP.gui.console_window.insert('end', '\n')
+                    APP.gui.writelog(snr_output.decode().replace("\n", ""))
+                    break
+        except ValueError:
+            print("Error: unable to retrieve datas from this node")
 
 
-class SaveCfg(object):
-    """ DirectKiwi configuration file save process. """
+class StartKiwiSDRclient(threading.Thread):
+    """ DirectKiwi Main audio socket process. """
 
     def __init__(self):
-        pass
+        super(StartKiwiSDRclient, self).__init__()
 
-    def __str__(self):
-        return self.__class__.__name__
-
-    @staticmethod
-    def save_cfg(cat, field, input):
-        """ always consider the map position as default and always save it, whatever parameter has been changed """
-        CFG["map"]["x0"], CFG["map"]["y0"] = str(bbox_2[0]), str(bbox_2[1])
-        CFG["map"]["x1"], CFG["map"]["y1"] = str(bbox_2[2]), str(bbox_2[3])
-        # Sets the new parameter value to the right category
-        CFG[cat][field] = input
-        # Now save the config file
-        with open('directKiwi.cfg', 'w') as config_file:
-            json.dump(CFG, config_file, indent=2)
+    def run(self):
+        """ DirectKiwi Main audio socket process. """
+        global LISTENMODE, CLIENT_PID
+        try:
+            # socket_connect = subprocess.Popen(
+            #     [sys.executable, 'KiwiSDRclient.py', '-s', HOST.rsplit("$", 10)[1].rsplit(":", 2)[0], '-p',
+            #      HOST.rsplit("$", 10)[1].rsplit(":", 2)[1], '-f', FREQUENCY, '-m', MODE, '-L', str(LP_CUT), '-H',
+            #      str(HP_CUT), '-g', str(AGC), str(MGAIN), str(HANG), str(THRESHOLD), str(SLOPE), str(DECAY),
+            #      VERSION.replace(' ', '_')], stdout=PIPE, shell=False)
+            if AGC == 1:
+                agc_array = False
+            else:
+                # default MGC =>  gain = 50  hang = 1  thresh = -100  slope = 6  decay = 1000
+                agc_array = ['-g ' + str(MGAIN), HANG, THRESHOLD, SLOPE, DECAY]
+                                                                #
+            socket_connect = subprocess.Popen([sys.executable, 'kiwiclient' + os.sep + 'kiwirecorder.py', '-s',
+                                               HOST.rsplit("$", 4)[1].rsplit(":", 2)[0], '-p',
+                                               HOST.rsplit("$", 4)[1].rsplit(":", 2)[1], '-f', FREQUENCY, '-m', MODE,
+                                               '-L', str(LP_CUT), '-H', str(HP_CUT), '-u', VERSION.replace(' ', '_'),
+                                               '-q', '-a', (" ,".join(map(str, agc_array)) if agc_array else ''),
+                                               '--log=debug'], stdout=PIPE, shell=False)
+            CLIENT_PID = socket_connect.pid
+            APP.gui.stop_button.configure(state="normal")
+            LISTENMODE = True
+        except ValueError:
+            print("error: unable to demodulate this node")
+            LISTENMODE = False
 
 
 class StopListen(object):
@@ -258,162 +282,165 @@ class StopListen(object):
     def run():
         """ Process that kills the web socket to stop listening mode. """
         global LISTENMODE
-        LISTENMODE = "0"
-        APP.window2.writelog("Stopping Listen mode")
+        LISTENMODE = False
+        APP.gui.writelog("Stopping Listen mode")
         APP.title(VERSION)
-        APP.window2.stop_button.configure(state="disabled")
+        APP.gui.stop_button.configure(state="disabled")
         try:
             os.kill(CLIENT_PID, signal.SIGTERM)
         except ImportError:
             pass
 
 
-class CheckSnr(threading.Thread):
-    """ SNR check process. """
-
-    def __init__(self):
-        super(CheckSnr, self).__init__()
-
-    def run(self):
-        """ SNR check process. """
-        socket2_connect = int
-        try:
-            socket2_connect = subprocess.Popen(
-                [sys.executable, 'microkiwi_waterfall.py', '-s', HOST.rsplit("$", 10)[1].rsplit(":", 2)[0], '-p',
-                 HOST.rsplit("$", 10)[1].rsplit(":", 2)[1], '-f', 'wf.bin'], stdout=PIPE, shell=False)
-        except ValueError:
-            print "Error: unable to retrieve datas from the node."
-        APP.window2.writelog("Retrieving " + str(HOST.rsplit("$", 10)[1].rsplit(":", 2)[0]) + " waterfall, please wait")
-        while True:
-            line = socket2_connect.stdout.readline()
-            if "received sample" in line:
-                APP.window2.console_window.insert('end -1c', '.')
-            if "SNR" in line:
-                APP.window2.console_window.delete('end -1c linestart', END)
-                APP.window2.console_window.insert('end', '\n')
-                break
-        APP.window2.writelog(line.replace("\n", ""))
-
-
-class StartKiwiSDRclient(threading.Thread):
-    """ DirectKiwi Main audio socket process. """
-
-    def __init__(self):
-        super(StartKiwiSDRclient, self).__init__()
-
-    def run(self):
-        """ DirectKiwi Main audio socket process. """
-        global CLIENT_PID, LISTENMODE
-        try:
-            #  '-g', '1', '50', '0', '-100', '6', '1000'  <==== static AGC settings
-            #  1= AGC (on)  50=Manual Gain (dB) 0=Hang (off)  -100=Threshold (dB) 6=Slope (dB) 1000=Decay (ms)
-            #  -L and -H are low & high pass demod filters settings
-            socket_connect = subprocess.Popen(
-                [sys.executable, 'KiwiSDRclient.py', '-s', HOST.rsplit("$", 10)[1].rsplit(":", 2)[0], '-p',
-                 HOST.rsplit("$", 10)[1].rsplit(":", 2)[1], '-f', FREQUENCY, '-m', MODE, '-L', str(LP_CUT),
-                 '-H', str(HP_CUT), '-g', str(AGC), str(MGAIN), str(HANG), str(THRESHOLD), str(SLOPE),
-                 str(DECAY)], stdout=PIPE, shell=False)
-            CLIENT_PID = socket_connect.pid
-            LISTENMODE = "1"
-            APP.window2.stop_button.configure(state="normal")
-        except ValueError:
-            print "error: unable to demodulate this node"
-            LISTENMODE = "0"
-
-
 class FillMapWithNodes(object):
-    """ DirectKiwi process to display the nodes on the World Map. """
+    """ process to display the nodes on the World Map. """
 
     def __init__(self, parent):
         self.parent = parent
 
     def run(self):
-        """ DirectKiwi process to display the nodes on the World Map. """
-        global NODE_COUNT
-        # Open the nodelist db
-        with open('directKiwi_server_list.db') as node_db:
-            db_data = json.load(node_db)
-            NODE_COUNT = len(db_data)
-            for node_index in range(NODE_COUNT):
-                # Change the icon color of favorites, blacklist and standards nodes and apply a gradiant // SNR
-                if db_data[node_index]["mac"] in WHITELIST:
-                    node_color = (self.color_variant(FAVCOLOR, (int(db_data[node_index]["snr"]) - 40) * 5))
-                elif db_data[node_index]["mac"] in BLACKLIST:
-                    node_color = (self.color_variant(BLKCOLOR, (int(db_data[node_index]["snr"]) - 40) * 5))
-                else:
-                    node_color = (self.color_variant(STDCOLOR, (int(db_data[node_index]["snr"]) - 40) * 5))
-                # Apply the map filtering
-                if MAPFL == 1 and db_data[node_index]["mac"] not in BLACKLIST:
-                    self.add_point(node_index, node_color, db_data)
-                elif MAPFL == 2 and db_data[node_index]["mac"] in WHITELIST:
-                    self.add_point(node_index, node_color, db_data)
-                elif MAPFL == 3 and db_data[node_index]["mac"] in BLACKLIST:
-                    self.add_point(node_index, node_color, db_data)
-                elif MAPFL == 4 and int(db_data[node_index]["gps"]) == 1:
-                    self.add_point(node_index, node_color, db_data)
-                elif MAPFL == 0:
-                    self.add_point(node_index, node_color, db_data)
-        self.parent.canvas.scan_dragto(-int(DX0.split('.')[0]), -int(DY0.split('.')[0]), gain=1)  # adjust map pos.
+        """ DirectTDoA process to display the nodes on the World Map. """
+        global NODE_COUNT, NODE_COUNT_FILTER, tag_list
+        tag_list = []
+        NODE_COUNT = 0
+        NODE_COUNT_FILTER = 0
+        server_lists = ["directKiwi_server_list.db", "directKiwi_static_server_list.db"]
+        for server_list in server_lists:
+            with open(server_list) as node_db:
+                db_data = json.load(node_db)
+                for node_index in range(len(db_data)):
+                    NODE_COUNT += 1
+                    # Change icon color of fav, black and standards nodes and apply a gradiant // SNR
+                    perc = (int(db_data[node_index]["snr"]) - 30) * GRAD
+                    if db_data[node_index]["mac"] in WHITELIST:
+                        node_color = (self.color_variant(FAVCOLOR, perc))
+                    elif db_data[node_index]["mac"] in BLACKLIST:
+                        node_color = (self.color_variant(BLKCOLOR, perc))
+                    else:
+                        node_color = (self.color_variant(STDCOLOR, perc))
+                    # Apply the map filtering
+                    if MAPFL == 1 and db_data[node_index]["mac"] not in BLACKLIST:
+                        NODE_COUNT_FILTER += 1
+                        self.add_point(node_index, node_color, db_data)
+                    elif MAPFL == 2 and db_data[node_index]["mac"] in WHITELIST:
+                        NODE_COUNT_FILTER += 1
+                        self.add_point(node_index, node_color, db_data)
+                    elif MAPFL == 3 and db_data[node_index]["mac"] in BLACKLIST:
+                        NODE_COUNT_FILTER += 1
+                        self.add_point(node_index, node_color, db_data)
+                    elif MAPFL == 0:
+                        NODE_COUNT_FILTER += 1
+                        self.add_point(node_index, node_color, db_data)
+        if 'APP' in globals():
+            APP.gui.label04.configure(text="█ Visible: " + str(NODE_COUNT_FILTER) + "/" + str(NODE_COUNT))
         self.parent.show_image()
-
-    def add_point(self, node_index, node_color, db_data):
-        """ Process that add node icons over the World map. """
-        # mykeys = ['url', 'mac', 'id', 'name', 'users', 'usersmax', 'gps', 'snr']
-        mykeys = ['mac', 'url', 'gps', 'fixes', 'id', 'name', 'users', 'usersmax', 'snr', 'lat', 'lon']
-        node_lat = self.convert_lat(db_data[node_index]["lat"])
-        node_lon = self.convert_lon(db_data[node_index]["lon"])
-        node_tag = str('$'.join([db_data[node_index][x] for x in mykeys]))
-        try:
-            self.parent.canvas.create_rectangle(node_lon, node_lat, node_lon + float(ICONSIZE),
-                                                node_lat + float(ICONSIZE), fill=node_color, tag=node_tag)
-            self.parent.canvas.tag_bind(node_tag, "<Button-1>", self.parent.onclickleft)
-            self.parent.canvas.tag_bind(node_tag, "<Button-3>", self.parent.onclickright)
-        except NameError:
-            print "OOPS - Error in adding the point to the map"
 
     @staticmethod
     def convert_lat(lat):
-        """ Process that convert the real node latitude coordinates to adapt to GUI window map geometry. """
-        if float(lat) > 0:  # nodes are between LATITUDE 0 and 90N
-            return 987.5 - (float(lat) * 11)
-        return 987.5 + (float(0 - float(lat)) * 11)
+        """ Convert the real node latitude coordinates to adapt to GUI window map geometry. """
+        # nodes are between LATITUDE 0 and 90N
+        if float(lat) > 0:
+            return 990 - (float(lat) * 11)
+        # nodes are between LATITUDE 0 and 60S
+        return 990 + (float(0 - float(lat)) * 11)
 
     @staticmethod
     def convert_lon(lon):
-        """ Process that converts the real node longitude coordinates to adapt to GUI window map geometry. """
-        return 1907.5 + ((float(lon) * 1910) / 180)
+        """ Convert the real node longitude coordinates to adapt to GUI window map geometry. """
+        return 1910 + ((float(lon) * 1910) / 180)
 
     @staticmethod
     def color_variant(hex_color, brightness_offset=1):
-        """ Process that changes the brightness (only) of a specific RGB color
-        source : https://chase-seibert.github.io/blog/2011/07/29/python-calculate-lighterdarker-rgb-colors.html. """
+        """ Process that changes the brightness (only) of a specific RGB color.
+        chase-seibert.github.io/blog/2011/07/29/python-calculate-lighterdarker-rgb-colors.html """
         rgb_hex = [hex_color[x:x + 2] for x in [1, 3, 5]]
         new_rgb_int = [int(hex_value, 16) + brightness_offset for hex_value in rgb_hex]
         new_rgb_int = [min([255, max([0, i])]) for i in new_rgb_int]
         return "#" + "".join(["0" + hex(i)[2:] if len(hex(i)[2:]) < 2 else hex(i)[2:] for i in new_rgb_int])
 
+    def add_point(self, node_index_data, node_color, node_db_data):
+        """ Process that add node icons over the World map. """
+        global tag_list
+        mykeys = ['mac', 'url', 'snr', 'lat', 'lon']
+        node_lat = self.convert_lat(node_db_data[node_index_data]["lat"])
+        node_lon = self.convert_lon(node_db_data[node_index_data]["lon"])
+        node_tag = str('$'.join([node_db_data[node_index_data][x] for x in mykeys]))
+        ic_size = int(ICONSIZE)
+        try:
+            if ICONTYPE == 0:
+                self.parent.canvas.create_oval(node_lon - ic_size, node_lat - ic_size, node_lon + ic_size,
+                                               node_lat + ic_size, fill=node_color, tag=node_tag)
+            else:
 
-class ZoomAdvanced(Frame):
-    """ Process that creates the GUI map canvas, enabling move & zoom on a picture. """
+                self.parent.canvas.create_rectangle(node_lon - ic_size, node_lat - ic_size, node_lon + ic_size,
+                                                    node_lat + ic_size, fill=node_color, tag=node_tag)
+            self.parent.canvas.tag_bind(node_tag, "<Button-1>", self.parent.onclickleft)
+            self.parent.canvas.tag_bind(node_tag, "<Button-3>", self.parent.onclickright)
+            tag_list.append(node_tag)
+        except NameError:
+            print("OOPS - Error in adding the point to the map")
+
+    def delete_point(self, map_definition):
+        """ Map presets deletion process. """
+        self.parent.canvas.delete(map_definition)
+
+    def redraw_map(self):
+        """ Redraw all icons on the World Map. """
+        for node_tag_item in tag_list:
+            self.parent.canvas.delete(node_tag_item)
+        ReadCfg().read_cfg()
+        FillMapWithNodes.run(self)
+
+    def node_sel_active(self, node_mac):
+        """ Adding additionnal highlight on node icon. """
+        for node_tag_item in tag_list:
+            if node_mac in node_tag_item:
+                tmp_latlon = node_tag_item.rsplit("$", 4)
+                tmp_lat = self.convert_lat(tmp_latlon[3])
+                tmp_lon = self.convert_lon(tmp_latlon[4])
+                is_delta = int(ICONSIZE) + 1
+                if ICONTYPE == 0:
+                    self.parent.canvas.create_oval(tmp_lon - is_delta, tmp_lat - is_delta, tmp_lon + is_delta,
+                                                   tmp_lat + is_delta, fill='', outline=HIGHLIGHT,
+                                                   tag=node_tag_item + "$#")
+                else:
+                    self.parent.canvas.create_rectangle(tmp_lon - is_delta, tmp_lat - is_delta, tmp_lon + is_delta,
+                                                        tmp_lat + is_delta, fill='', outline=HIGHLIGHT,
+                                                        tag=node_tag_item + "$#")
+
+    def node_selection_inactive(self, node_mac):
+        """ Removing additionnal highlight on selected node icon. """
+        for node_tag_item in tag_list:
+            if node_mac in node_tag_item:
+                self.parent.canvas.delete(node_tag_item + "$#")
+
+    def node_selection_inactiveall(self):
+        """ Removing ALL additionnal highlights on selected nodes icons. """
+        for node_tag_item in tag_list:
+            self.parent.canvas.delete(node_tag_item + "$#")
+
+    def after_update(self):
+        ReadCfg().read_cfg()
+        FillMapWithNodes.run(self)
+
+
+class GuiCanvas(Frame):
+    """ Process that creates the GUI map canvas, enabling move & zoom on a picture.
+    source: stackoverflow.com/questions/41656176/tkinter-canvas-zoom-move-pan?noredirect=1&lq=1 """
 
     def __init__(self, parent):
-        # source: stackoverflow.com/questions/41656176/tkinter-canvas-zoom-move-pan?noredirect=1&lq=1
         Frame.__init__(self, parent=None)
-        parent.geometry("1050x600+200+50")
+        # tip: GuiCanvas is member1
+        parent.geometry("1050x600+200+50")  # directKiwi
+        # parent.geometry("1200x700+150+10")  # directTDoA
+        img = PhotoImage(file='icon.gif')
+        parent.after(50, parent.call('wm', 'iconphoto', parent, img))
         global LISTENMODE
+        LISTENMODE = False
         ReadCfg().read_cfg()
-        LISTENMODE = "0"
-        # self.x = self.y = 0
+        self.x = self.y = 0
         # Create canvas and put image on it
         self.canvas = Canvas(self.master, highlightthickness=0)
-        # self.sbarv = Scrollbar(self, orient=VERTICAL)
-        # self.sbarh = Scrollbar(self, orient=HORIZONTAL)
-        # self.sbarv.config(command=self.canvas.yview)
-        # self.sbarh.config(command=self.canvas.xview)
-        # self.canvas.config(yscrollcommand=self.sbarv.set)
-        # self.canvas.config(xscrollcommand=self.sbarh.set)
-        # self.sbarv.grid(row=0, column=1, stick=N + S)
-        # self.sbarh.grid(row=1, column=0, sticky=E + W)
         self.canvas.grid(row=0, column=0, sticky='nswe')
         self.canvas.update()  # wait till canvas is created
         # Make the canvas expandable
@@ -423,9 +450,10 @@ class ZoomAdvanced(Frame):
         self.canvas.bind('<Configure>', self.show_image)  # canvas is resized
         self.canvas.bind('<ButtonPress-1>', self.move_from)  # map move
         self.canvas.bind('<B1-Motion>', self.move_to)  # map move
-        # self.canvas.bind_all('<MouseWheel>', self.wheel)  # Windows Zoom disabled in this version !
-        # self.canvas.bind('<Button-5>', self.wheel)  # Linux Zoom disabled in this version !
-        # self.canvas.bind('<Button-4>', self.wheel)  # Linux Zoom disabled in this version !
+        # self.canvas.bind_all('<MouseWheel>', self.wheel)  # Windows Zoom
+        # self.canvas.bind('<Button-5>', self.wheel)  # Linux Zoom
+        # self.canvas.bind('<Button-4>', self.wheel)  # Linux Zoom
+
         self.image = Image.open(DMAP)
         self.width, self.height = self.image.size
         self.imscale = 1.0  # scale for the image
@@ -433,177 +461,216 @@ class ZoomAdvanced(Frame):
         # Put image into container rectangle and use it to set proper coordinates to the image
         self.container = self.canvas.create_rectangle(0, 0, self.width, self.height, width=0)
         self.canvas.config(scrollregion=(0, 0, self.width, self.height))
+        self.rect = None
         self.start_x = None
         self.start_y = None
-        self.canvas.scan_dragto(-int(DX0.split('.')[0]), -int(DY0.split('.')[0]), gain=1)  # adjust map pos.
+        self.canvas.scan_dragto(-int(DX0.split('.')[0]), -int(DY0.split('.')[0]), gain=1)
         self.show_image()
-        time.sleep(0.2)
+        # time.sleep(0.02)
         FillMapWithNodes(self).run()
+
+    def unselect_allpoint(self):
+        """ Calling process that remove additionnal highlight on all selected nodes. """
+        FillMapWithNodes(self).node_selection_inactiveall()
+
+    def redraw_map_cmd(self):
+        """ Calling process that redraw all icons on the World map. """
+        FillMapWithNodes(self).redraw_map()
+
+    def delete_point(self, n):
+        """ KnownPoint deletion process. """
+        FillMapWithNodes(self).delete_point(n.rsplit(' (')[0])
 
     def onclickleft(self, event=None):
         """ Left Mouse Click bind to start demodulation from the node. """
-        global HOST, FREQUENCY, CLIENT_PID, LISTENMODE
+        global HOST, FREQUENCY, LISTENMODE, CLIENT_PID
         HOST = self.canvas.gettags(self.canvas.find_withtag(CURRENT))[0]
-        FREQUENCY = APP.window2.entry1.get()
+        # mykeys = ['mac', 'url', 'snr', 'lat', 'lon']
+        # n_field    0      1      2      3      4
+        n_field = HOST.rsplit("$", 4)
+        FREQUENCY = APP.gui.freq_input.get()
         permit_web = "no"
         if FREQUENCY == "" or float(FREQUENCY) < 5 or float(FREQUENCY) > 29995:
-            APP.window2.writelog("Check FREQUENCY field !")
+            APP.gui.writelog("Check FREQUENCY field !")
         else:
             try:  # check if the node is answering
-                chktimeout = 1  # timeout of the node check
-                checkthenode = requests.get("http://" + str(HOST).rsplit("$", 10)[1] + "/status", timeout=chktimeout)
+                chktimeout = 2  # timeout of the node check
+                checkthenode = requests.get("http://" + n_field[1] + "/status", timeout=chktimeout)
+                i_node = []
                 infonodes = checkthenode.text.split("\n")
                 if len(infonodes) == 22 and "status" in infonodes[0]:
                     try:
-                        if infonodes[6].rsplit("=", 2)[1] == infonodes[7].rsplit("=", 2)[1]:  # users Vs. users_max
-                            APP.window2.writelog(" " + str(HOST).rsplit("$", 10)[1].rsplit(":", 2)[0] + " is full.")
+                        for line in checkthenode.text.splitlines():
+                            i_node.append(line.rsplit("=", 1)[1])
+                        # i_node = each parameter of the retrieved "address:port/status" webpage lines
+                        # 0 = status (private / public)    10 = good received GPS sats
+                        # 1 = offline (no / yes)           11 = total GPS fixes
+                        # 2 = name                         12 = GPS fixes per minute (max = 30)
+                        # 3 = sdr_hw                       13 = GPS fixes per hour
+                        # 4 = op_email                     14 = TDoA id
+                        # 5 = bands (KiwiSDR freq range)   15 = TDoA receiver slots
+                        # 6 = users                        16 = Receiver altitude
+                        # 7 = max users                    17 = Receiver location
+                        # 8 = avatar ctime                 18 = Software version
+                        # 9 = gps coordinates              19 = Antenna description
+                        # 20 = KiwiSDR uptime (in sec)
+                        if i_node[6] == i_node[7]:  # users Vs. users_max
+                            APP.gui.writelog(" " + str(HOST).rsplit("$", 4)[1].rsplit(":", 2)[0] + " is full.")
                         elif infonodes[1].rsplit("=", 2)[1] == "yes":  # offline=no/yes
-                            APP.window2.writelog(" " + str(HOST).rsplit("$", 10)[1].rsplit(":", 2)[0] + " is offline.")
+                            APP.gui.writelog(" " + str(HOST).rsplit("$", 4)[1].rsplit(":", 2)[0] + " is offline.")
                         else:
                             permit_web = "yes"
-                    except ValueError:
-                        pass
-                else:
-                    APP.window2.writelog("Sorry " + str(HOST).rsplit("$", 10)[1].rsplit(":", 2)[0] + " is unreachable.")
+                    except IndexError as wrong_status:
+                        APP.gui.writelog("Sorry " + str(HOST).rsplit("$", 4)[1].rsplit(":", 2)[0] + " is unreachable.")
             except requests.RequestException:
-                APP.window2.writelog("Sorry " + str(HOST).rsplit("$", 10)[1].rsplit(":", 2)[0] + " has problems.")
+                APP.gui.writelog("Sorry " + str(HOST).rsplit("$", 4)[1].rsplit(":", 2)[0] + " is unreachable.")
             if permit_web == "yes":
-                if LISTENMODE == "0":
+                if not LISTENMODE:
                     StartKiwiSDRclient().start()
+                    self.populate("add", n_field)
                 else:
                     try:
                         os.kill(CLIENT_PID, signal.SIGTERM)
                         StartKiwiSDRclient().start()
+                        self.unselect_allpoint()
+                        self.populate("add", n_field)
                     except NameError:
                         pass
-                APP.window2.writelog(" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ")
-                APP.window2.writelog(
-                    "[ " + str(HOST).rsplit("$", 10)[1].rsplit(":", 2)[0] + " / " + FREQUENCY + " kHz / " + str(
+                APP.gui.writelog(" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ")
+                APP.gui.writelog(
+                    "[ " + str(HOST).rsplit("$", 4)[1].rsplit(":", 2)[0] + " / " + FREQUENCY + " kHz / " + str(
                         MODE).upper() + " / " + str(HP_CUT - LP_CUT) + "Hz ]")
-                APP.window2.writelog("[ " + str(HOST).rsplit("$", 10)[5].replace("_", " ") + " ]")
-                APP.title(str(VERSION) + " - [ " + str(HOST).rsplit("$", 10)[1].rsplit(":", 2)[
+                APP.title(str(VERSION) + " - [ " + str(HOST).rsplit("$", 4)[1].rsplit(":", 2)[
                     0] + " / " + FREQUENCY + " kHz / " + str(MODE).upper() + " / " + str(HP_CUT - LP_CUT) + "Hz ]")
 
     def onclickright(self, event):
         """ Right Mouse Click bind to watch node SNR values / web browser / fav / blacklist. """
-        global HOST, WHITELIST, BLACKLIST, LISTENMODE, FREQUENCY
+        global HOST
         HOST = self.canvas.gettags(self.canvas.find_withtag(CURRENT))[0]
-        menu = Menu(self, tearoff=0, fg="black", bg="grey", font='TkFixedFont 7')
-        permit_web = "no"
-        n_field = HOST.rsplit("$", 10)
+        menu = Menu(self, tearoff=0, fg="black", bg=BGC, font='TkFixedFont 7')
+        # mykeys = ['mac', 'url', 'snr', 'lat', 'lon']
+        # n_field    0      1      2      3      4
+        n_field = HOST.rsplit("$", 4)
+        # Color gradiant proportionnal to SNR value
+        snr_gradiant = (int(n_field[2]) - 30) * GRAD
         if n_field[0] in WHITELIST:
             nodecolor = FAVCOLOR
         else:
             nodecolor = STDCOLOR
-        #  HOST.rsplit("$", 10)[#] <<
-        #  0=url  1=mac  2=id  3=name  4=users  5=users max  6=GPS fix/min 7=SNR 0-30 MHz
-        # mykeys = ['mac', 'url', 'gps', 'fixes', 'id', 'name', 'users', usersmax', 'snr', 'lat', 'lon']
-        #            0      1      2      3        4     5       6       7           8      9      10
-        font_snr = 'TkFixedFont 7'
-        FREQUENCY = APP.window2.entry1.get()
+        # Red background
+        rbg = self.color_variant("#FF0000", snr_gradiant)
+        # Dynamic foreground (adapting font to white or black depending on luminosity)
+        dfg = self.get_font_color((self.color_variant("#FFFF00", snr_gradiant)))
+        # Colorized background (depending on Favorite node or not)
+        cbg = self.color_variant(nodecolor, snr_gradiant)
         try:  # check if the node is answering
-            chktimeout = 1  # timeout of the node check
+            chktimeout = 2  # timeout of the node check
             checkthenode = requests.get("http://" + n_field[1] + "/status", timeout=chktimeout)
-            infonodes = checkthenode.text.split("\n")
-            try:  # node filtering
-                permit_web = "no"
-                if infonodes[6].rsplit("=", 2)[1] == infonodes[7].rsplit("=", 2)[1]:  # users Vs. users_max
-                    menu.add_command(label="Node is full.",
-                                     background=(self.color_variant("#FF0000", (int(n_field[8]) - 30) * 10)),
-                                     foreground=self.get_font_color(
-                                         (self.color_variant("#FFFF00", (int(n_field[8]) - 30) * 10))),
-                                     command=None)
-                elif infonodes[1].rsplit("=", 2)[1] == "yes":  # offline=no/yes
-                    menu.add_command(label="Node offline.",
-                                     background=(self.color_variant("#FF0000", (int(n_field[8]) - 30) * 10)),
-                                     foreground=self.get_font_color(
-                                         (self.color_variant("#FFFF00", (int(n_field[8]) - 30) * 10))),
-                                     command=None)
-                else:  # all ok for this node
-                    permit_web = "yes"
-            except IndexError:
-                if "not found" in infonodes[13]:
-                    menu.add_command(
-                        label="Node not available. (proxy.kiwisdr.com error)",
-                        background=(self.color_variant("#FF0000", (int(n_field[8]) - 30) * 10)),
-                        foreground=self.get_font_color((self.color_variant("#FFFF00", (int(n_field[8]) - 30) * 10))),
-                        command=None)
-                    permit_web = "no"
-
-        except requests.RequestException as req_error:
-            menu.add_command(
-                label="Node not available. " + str(req_error.message).rsplit('(')[2],
-                background=(self.color_variant("#FF0000", (int(n_field[8]) - 30) * 10)),
-                foreground=self.get_font_color(
-                    (self.color_variant("#FFFF00", (int(n_field[8]) - 30) * 10))), command=None)
-            permit_web = "no"
-
-        if permit_web == "yes" and FREQUENCY != "" and 5 < float(FREQUENCY) < 30000:
+            i_node = []
             try:
-                menu.add_command(
-                    label="Open in Web browser",
-                    state=NORMAL, background=(self.color_variant(nodecolor, (int(n_field[8]) - 30) * 10)),
-                    foreground=self.get_font_color((self.color_variant("#FFFF00", (int(n_field[8]) - 30) * 10))),
-                    command=lambda : self.openinbrowser(0))
-                if int(n_field[2]) == 1:
-                    menu.add_command(
-                        label="Open in Web browser with TDoA extension loaded",
-                        state=NORMAL, background=(self.color_variant(nodecolor, (int(n_field[8]) - 30) * 10)),
-                        foreground=self.get_font_color((self.color_variant("#FFFF00", (int(n_field[8]) - 30) * 10))),
-                        command=lambda: self.openinbrowser(1))
-            except ImportError:
-                pass
-        if int(n_field[2]) == 1:
-            gps_status = "GPS active (" + n_field[3] + " fixes/min)"
-        else:
-            gps_status = "GPS inactive"
-        menu.add_command(
-            label=n_field[4] + " | " + n_field[5].replace("_", " "), state=NORMAL,
-            background=self.color_variant(nodecolor, (int(n_field[8]) - 30) * 10),
-            foreground=self.get_font_color((self.color_variant("#FFFF00", (int(n_field[8]) - 30) * 10))), command=None)
-        menu.add_command(
-            label="USERS " + n_field[6] + "/" + n_field[7] + " | " + gps_status + " | SNR " + n_field[8] + " dB",
-            state=NORMAL,
-            background=self.color_variant(nodecolor, (int(n_field[8]) - 30) * 10),
-            foreground=self.get_font_color((self.color_variant("#FFFF00", (int(n_field[8]) - 30) * 10))), command=None)
-        if permit_web == "yes":
+                for line in checkthenode.text.splitlines():
+                    i_node.append(line.rsplit("=", 1)[1])
+                # i_node = each parameter of the retrieved "address:port/status" webpage lines
+                # 0 = status (private / public)    10 = good received GPS sats
+                # 1 = offline (no / yes)           11 = total GPS fixes
+                # 2 = name                         12 = GPS fixes per minute (max = 30)
+                # 3 = sdr_hw                       13 = GPS fixes per hour
+                # 4 = op_email                     14 = TDoA id
+                # 5 = bands (KiwiSDR freq range)   15 = TDoA receiver slots
+                # 6 = users                        16 = Receiver altitude
+                # 7 = max users                    17 = Receiver location
+                # 8 = avatar ctime                 18 = Software version
+                # 9 = gps coordinates              19 = Antenna description
+                # 20 = KiwiSDR uptime (in sec)
+                permit_web = False
+                n_stat = " [" + i_node[6] + "/" + i_node[7] + " users]"
+                g_stat = " [GNSS: " + i_node[12] + " fixes/min] [GPS: " + i_node[10] + "/12]"
+                s_stat = " [SNR: " + n_field[2] + " dB]"
+                # If no socket slots are available on this node :
+                if i_node[6] == i_node[7]:
+                    menu.add_command(label=n_field[1] + " is full" + g_stat + n_stat + s_stat, background=rbg,
+                                     foreground=dfg, command=None)
+                # If node is offline :
+                elif i_node[1] == "yes":
+                    menu.add_command(label=n_field[1] + " is offline", background=rbg, foreground=dfg, command=None)
+                # If node had no GPS fix in the last minute :
+                else:  # All is ok for this node and then, permit extra commands
+                    permit_web = True
+            except IndexError as wrong_status:
+                menu.add_command(label=n_field[1] + " is not available. (proxy.kiwisdr.com error)", background=rbg,
+                                 foreground=dfg, command=None)
+                permit_web = False
+        except requests.exceptions.ConnectionError as req_conn_error:
+            menu.add_command(label=n_field[1] + " node is not available. " + str(req_conn_error).split('\'')[1::2][1],
+                             background=rbg, foreground=dfg, command=None)
+            permit_web = False
+        except requests.exceptions.RequestException as req_various_error:
+            menu.add_command(label=n_field[1] + " node is not available. " + str(req_various_error), background=rbg,
+                             foreground=dfg, command=None)
+            permit_web = False
+
+        # Always try to print out KiwiSDR's full name line
+        try:
+            menu.add_command(label=i_node[2] + g_stat + n_stat + s_stat, state=NORMAL, background=cbg, foreground=dfg,
+                             command=None)
+        except (UnboundLocalError, IndexError):
+            pass
+
+        # EXTRA commands and lines
+        if permit_web and APP.gui.freq_input.get() != "" and 5 < float(APP.gui.freq_input.get()) < 30000:
+            # Add Open in Web browser lines
             menu.add_separator()
-            menu.add_command(label="SNR Check", background=self.color_variant(nodecolor, (int(n_field[8]) - 30) * 10),
-                             foreground=self.get_font_color(
-                                 (self.color_variant("#FFFF00", (int(n_field[8]) - 30) * 10))), command=self.checksnr)
+            menu.add_command(label="Open " + n_field[1] + " in Web browser", state=NORMAL, background=cbg,
+                             foreground=dfg, command=lambda: self.openinbrowser(0, APP.gui.freq_input.get()))
+            menu.add_command(label="Open " + n_field[1] + " in Web browser with pre-set TDoA extension loaded",
+                             state=NORMAL, background=cbg, foreground=dfg,
+                             command=lambda: self.openinbrowser(1, APP.gui.freq_input.get()))
+            menu.add_command(label="Open " + n_field[1] + "/status", background=cbg, foreground=dfg,
+                             command=lambda: self.openinbrowser(2, None))
+            # parts removed because of python3 compatibility not created yet
+            # if LISTENMODE == "0":
+            #     # Add demodulation process line
+            #     menu.add_cascade(label="Listen to that frequency using " + n_field[1], state=NORMAL, background=cbg,
+            #                      foreground=dfg, menu=menu2)
+            #     menu2.add_command(label="USB", background=cbg, foreground=dfg,
+            #                       command=lambda *args: self.listenmode("usb"))
+            #     menu2.add_command(label="LSB", background=cbg, foreground=dfg,
+            #                       command=lambda *args: self.listenmode("lsb"))
+            #     menu2.add_command(label="AM", background=cbg, foreground=dfg,
+            #                       command=lambda *args: self.listenmode("am"))
+            # else:
+            #     menu.add_command(label="Stop Listen Mode", state=NORMAL, background=cbg, foreground=dfg,
+            #                      command=self.stoplistenmode)
+        if permit_web:
+            menu.add_command(label="Get Waterfall & SNR from " + n_field[1], background=cbg, foreground=dfg,
+                             command=CheckSnr(n_field[1]).start)
         menu.add_separator()
         if n_field[0] in WHITELIST:  # if node is a favorite
-            menu.add_command(label="remove from favorites", command=self.remfavorite)
+            menu.add_command(label="remove from favorites", background=cbg, foreground=dfg, command=self.remfavorite)
         elif n_field[0] not in BLACKLIST:
-            menu.add_command(label="add to favorites", command=self.addfavorite)
+            menu.add_command(label="add to favorites", background=cbg, foreground=dfg, command=self.addfavorite)
         if n_field[0] in BLACKLIST:  # if node is blacklisted
-            menu.add_command(label="remove from blacklist", command=self.remblacklist)
+            menu.add_command(label="remove from blacklist", background=cbg, foreground=dfg, command=self.remblacklist)
         elif n_field[0] not in WHITELIST:
-            menu.add_command(label="add to blacklist", command=self.addblacklist)
-        menu.post(event.x_root, event.y_root)  # popup placement
+            menu.add_command(label="add to blacklist", background=cbg, foreground=dfg, command=self.addblacklist)
+        menu.post(event.x_root, event.y_root)  # popup placement // node icon
 
     @staticmethod
-    def get_font_color(original_color):
-        """ Adapting the font color regarding background luminosity. """
-        # src stackoverflow.com/questions/946544/good-text-foreground-color-for-a-given-background-color/946734#946734
-        rgb_hex = [original_color[x:x + 2] for x in [1, 3, 5]]
-        if int(rgb_hex[0], 16) * 0.299 + int(rgb_hex[1], 16) * 0.587 + int(rgb_hex[2], 16) * 0.114 > 186:
+    def get_font_color(font_color):
+        """ Adapting the foreground font color regarding background luminosity.
+        stackoverflow questions/946544/good-text-foreground-color-for-a-given-background-color """
+        rgb_hex = [font_color[x:x + 2] for x in [1, 3, 5]]
+        threshold = THRES  # default = 186
+        if int(rgb_hex[0], 16) * 0.299 + int(rgb_hex[1], 16) * 0.587 + int(rgb_hex[2], 16) * 0.114 > threshold:
             return "#000000"
-        return "#FFFFFF"
+        # else:
+        return "#ffffff"
         # if (red*0.299 + green*0.587 + blue*0.114) > 186 use #000000 else use #ffffff
 
     @staticmethod
-    def convert_dbm_to_smeter(dbm):
-        """ Routine that converts dbm values to S-meter unit (for node submenus SNR display). """
-        dbm_values = [-121, -115, -109, -103, -97, -91, -85, -79, -73, -63, -53, -43, -33, -23, -13, -3]
-        if dbm != 0:
-            return next(x[0] for x in enumerate(dbm_values) if x[1] > dbm)
-        return "--"
-
-    @staticmethod
     def color_variant(hex_color, brightness_offset=1):
-        """ Routine used to change color brightness according to SNR scaled value. """
-        # source: https://chase-seibert.github.io/blog/2011/07/29/python-calculate-lighterdarker-rgb-colors.html
+        """ Routine used to change color brightness according to SNR scaled value.
+        chase-seibert.github.io/blog/2011/07/29/python-calculate-lighterdarker-rgb-colors.html """
         rgb_hex = [hex_color[x:x + 2] for x in [1, 3, 5]]
         new_rgb_int = [int(hex_value, 16) + brightness_offset for hex_value in rgb_hex]
         new_rgb_int = [min([255, max([0, i])]) for i in new_rgb_int]
@@ -612,56 +679,49 @@ class ZoomAdvanced(Frame):
     @staticmethod
     def addfavorite():
         """ Add Favorite node submenu entry. """
-        WHITELIST.append(HOST.rsplit("$", 10)[0])
+        WHITELIST.append(HOST.rsplit("$", 4)[0])
         SaveCfg().save_cfg("nodes", "whitelist", WHITELIST)
-        Restart().run()
+        APP.gui.redraw()
 
     @staticmethod
     def remfavorite():
         """ Remove Favorite node submenu entry. """
-        WHITELIST.remove(HOST.rsplit("$", 10)[0])
+        WHITELIST.remove(HOST.rsplit("$", 4)[0])
         SaveCfg().save_cfg("nodes", "whitelist", WHITELIST)
-        Restart().run()
+        APP.gui.redraw()
 
     @staticmethod
     def addblacklist():
         """ Add Blacklist node submenu entry. """
-        BLACKLIST.append(HOST.rsplit("$", 10)[0])
+        BLACKLIST.append(HOST.rsplit("$", 4)[0])
         SaveCfg().save_cfg("nodes", "blacklist", BLACKLIST)
-        Restart().run()
+        APP.gui.redraw()
 
     @staticmethod
     def remblacklist():
         """ Remove Blacklist node submenu entry. """
-        BLACKLIST.remove(HOST.rsplit("$", 10)[0])
+        BLACKLIST.remove(HOST.rsplit("$", 4)[0])
         SaveCfg().save_cfg("nodes", "blacklist", BLACKLIST)
-        Restart().run()
+        APP.gui.redraw()
 
     @staticmethod
-    def openinbrowser(mode):
-        """ Browser call with selected FREQUENCY to node (fixed zoom level at 8). """
-        if mode == 0:
-            url = "http://" + str(HOST).rsplit("$", 10)[1] + "/?f=" + str(FREQUENCY) + str(MODE).lower() + "z8"
+    def openinbrowser(extension, freq):
+        """ Web browser call to connect on the node (default = IQ mode & fixed zoom level at 8). """
+        if extension == 0:
+            url = "http://" + str(HOST).rsplit("$", 4)[1] + "/?f=" + freq + "iqz8"
+        elif extension == 2:
+            url = "http://" + str(HOST).rsplit("$", 4)[1] + "/status"
         else:
-            url = "http://" + str(HOST).rsplit("$", 10)[1] + "/?f=" + str(FREQUENCY) + str(
-                MODE).lower() + "z8&ext=tdoa,lat:" + str(HOST).rsplit("$", 10)[9] + ",lon:" + str(HOST).rsplit("$", 10)[
-                      10] + ",z:5," + str(HOST).rsplit("$", 10)[4]
+            url = "http://" + str(HOST).rsplit("$", 4)[1] + "/?f=" + freq + "iqz8&ext=tdoa,lat:" + \
+                  str(HOST).rsplit("$", 4)[3] + ",lon:" + str(HOST).rsplit("$", 4)[4] + ",z:5"
         webbrowser.open_new(url)
 
-    @staticmethod
-    def checksnr():
-        """ Checking the node SNR, using the embedded function in microkiwi-waterfall.py script. """
-        CheckSnr().start()
-
-    def scroll_y(self, *args):
-        """ Scroll y. """
-        self.canvas.yview(*args)  # scroll vertically
-        self.show_image()  # redraw the image
-
-    def scroll_x(self, *args):
-        """ Scroll x. """
-        self.canvas.xview(*args)  # scroll horizontally
-        self.show_image()  # redraw the image
+    def populate(self, action, sel_node_tag):
+        """ highlight node process. """
+        if action == "add":
+            FillMapWithNodes(self).node_sel_active(sel_node_tag[0])
+        else:
+            FillMapWithNodes(self).node_selection_inactive(sel_node_tag[0])
 
     def move_from(self, event):
         """ Move from. """
@@ -674,11 +734,11 @@ class ZoomAdvanced(Frame):
 
     def wheel(self, event):
         """ Routine for mouse wheel actions. """
-        # global bbox
-        x_wheel = self.canvas.canvasx(event.x)
-        y_wheel = self.canvas.canvasy(event.y)
+        x_eve = self.canvas.canvasx(event.x)
+        y_eve = self.canvas.canvasy(event.y)
+        global image_scale
         bbox = self.canvas.bbox(self.container)  # get image area
-        if bbox[0] < x_wheel < bbox[2] and bbox[1] < y_wheel < bbox[3]:
+        if bbox[0] < x_eve < bbox[2] and bbox[1] < y_eve < bbox[3]:
             pass  # Ok! Inside the image
         else:
             return  # zoom only inside image area
@@ -687,7 +747,7 @@ class ZoomAdvanced(Frame):
         if event.num == 5 or event.delta == -120:  # scroll down
             i = min(self.width, self.height)
             if int(i * self.imscale) < 2000:
-                return  # block zoom if image is less than 600 pixels
+                return  # block zoom if image is less than 2000 pixels
             self.imscale /= self.delta
             scale /= self.delta
         if event.num == 4 or event.delta == 120:  # scroll up
@@ -696,36 +756,43 @@ class ZoomAdvanced(Frame):
                 return  # 1 pixel is bigger than the visible area
             self.imscale *= self.delta
             scale *= self.delta
-        self.canvas.scale('all', x_wheel, y_wheel, scale, scale)  # rescale all canvas objects
+        # rescale all canvas objects
+        # scale = 2.0 or 0.5
+        image_scale = self.imscale
+        # APP.gui.label04.configure(text="Map Zoom : " + str(int(image_scale)))
+        self.canvas.scale('all', x_eve, y_eve, scale, scale)
+        # self.canvas.scale('')
         self.show_image()
 
     def show_image(self, event=None):
         """ Creating the canvas with the picture. """
-        global bbox, bbox_2
-        bbox_1 = self.canvas.bbox(self.container)  # get image area
+        global b_box2
+        b_box1 = self.canvas.bbox(self.container)  # get image area
         # Remove 1 pixel shift at the sides of the bbox1
-        bbox_1 = (bbox_1[0] + 1, bbox_1[1] + 1, bbox_1[2] - 1, bbox_1[3] - 1)
-        bbox_2 = (self.canvas.canvasx(0), self.canvas.canvasy(0), self.canvas.canvasx(self.canvas.winfo_width()),
+        b_box1 = (b_box1[0] + 1, b_box1[1] + 1, b_box1[2] - 1, b_box1[3] - 1)
+        b_box2 = (self.canvas.canvasx(0),  # get visible area of the canvas
+                  self.canvas.canvasy(0),
+                  self.canvas.canvasx(self.canvas.winfo_width()),
                   self.canvas.canvasy(self.canvas.winfo_height()))
-        bbox = [min(bbox_1[0], bbox_2[0]), min(bbox_1[1], bbox_2[1]), max(bbox_1[2], bbox_2[2]),
-                max(bbox_1[3], bbox_2[3])]
-        if bbox[0] == bbox_2[0] and bbox[2] == bbox_2[2]:  # whole image in the visible area
-            bbox[0] = bbox_1[0]
-            bbox[2] = bbox_1[2]
-        if bbox[1] == bbox_2[1] and bbox[3] == bbox_2[3]:  # whole image in the visible area
-            bbox[1] = bbox_1[1]
-            bbox[3] = bbox_1[3]
+        bbox = [min(b_box1[0], b_box2[0]), min(b_box1[1], b_box2[1]),  # get scroll region box
+                max(b_box1[2], b_box2[2]), max(b_box1[3], b_box2[3])]
+        if bbox[0] == b_box2[0] and bbox[2] == b_box2[2]:  # whole image in the visible area
+            bbox[0] = b_box1[0]
+            bbox[2] = b_box1[2]
+        if bbox[1] == b_box2[1] and bbox[3] == b_box2[3]:  # whole image in the visible area
+            bbox[1] = b_box1[1]
+            bbox[3] = b_box1[3]
         self.canvas.configure(scrollregion=bbox)  # set scroll region
-        x_1 = max(bbox_2[0] - bbox_1[0], 0)  # get coordinates (x1,y1,x2,y2) of the image tile
-        y_1 = max(bbox_2[1] - bbox_1[1], 0)
-        x_2 = min(bbox_2[2], bbox_1[2]) - bbox_1[0]
-        y_2 = min(bbox_2[3], bbox_1[3]) - bbox_1[1]
+        x_1 = max(b_box2[0] - b_box1[0], 0)  # get coordinates (x1,y1,x2,y2) of the image tile
+        y_1 = max(b_box2[1] - b_box1[1], 0)
+        x_2 = min(b_box2[2], b_box1[2]) - b_box1[0]
+        y_2 = min(b_box2[3], b_box1[3]) - b_box1[1]
         if int(x_2 - x_1) > 0 and int(y_2 - y_1) > 0:  # show image if it in the visible area
-            x_0 = min(int(x_2 / self.imscale), self.width)  # sometimes it is larger on 1 pixel...
-            y_0 = min(int(y_2 / self.imscale), self.height)  # ...and sometimes not
-            image = self.image.crop((int(x_1 / self.imscale), int(y_1 / self.imscale), x_0, y_0))
+            x = min(int(x_2 / self.imscale), self.width)  # sometimes it is larger on 1 pixel...
+            y = min(int(y_2 / self.imscale), self.height)  # ...and sometimes not
+            image = self.image.crop((int(x_1 / self.imscale), int(y_1 / self.imscale), x, y))
             imagetk = ImageTk.PhotoImage(image.resize((int(x_2 - x_1), int(y_2 - y_1))))
-            imageid = self.canvas.create_image(max(bbox_2[0], bbox_1[0]), max(bbox_2[1], bbox_1[1]),
+            imageid = self.canvas.create_image(max(b_box2[0], b_box1[0]), max(b_box2[1], b_box1[1]),
                                                anchor='nw', image=imagetk)
             self.canvas.lower(imageid)  # set image into background
             self.canvas.imagetk = imagetk  # keep an extra reference to prevent garbage-collection
@@ -736,77 +803,78 @@ class MainWindow(Frame):
 
     def __init__(self, parent):
         Frame.__init__(self, parent)
-        self.member1 = ZoomAdvanced(parent)
-        if os.path.isfile('directKiwi_server_list.db') is not True:
-            tkMessageBox.showinfo(title="  (ツ) ", message="oops no node db found, Click OK to run an update now")
-            CheckUpdate().run()
-        global MODE
-        # Run the Checkversion routine (no more used)
-        # self.checkversion()
-        bgc = '#999999'  # GUI background color  default #d9d9d9
-        fgc = '#000000'  # GUI foreground color  default #000000
+        self.member1 = GuiCanvas(parent)
+        global image_scale, MODE
         dfgc = '#a3a3a3'  # GUI (disabled) foreground color
-        # Bottom-Right control background
+        la_f = "TkFixedFont 7 bold"
+        image_scale = 1
+        # Control panel background
         self.ctrl_backgd = Label(parent)
         self.ctrl_backgd.place(relx=0, rely=0.8, relheight=0.3, relwidth=1)
-        self.ctrl_backgd.configure(bg=bgc, fg=fgc, width=214)
+        self.ctrl_backgd.configure(bg=BGC, fg=FGC, width=214)
+
         # Map Legend
         self.label01 = Label(parent)
-        self.label01.place(x=0, y=0, height=14, width=62)
-        self.label01.configure(bg="black", font="TkFixedFont 7", anchor="w", fg=STDCOLOR, text="█ Standard")
+        self.label01.place(x=0, y=0, height=14, width=96)
+        self.label01.configure(bg="black", font=la_f, anchor="w", fg=STDCOLOR, text="█ Standard")
         self.label02 = Label(parent)
-        self.label02.place(x=0, y=14, height=14, width=62)
-        self.label02.configure(bg="black", font="TkFixedFont 7", anchor="w", fg=FAVCOLOR, text="█ Favorite")
+        self.label02.place(x=0, y=14, height=14, width=96)
+        self.label02.configure(bg="black", font=la_f, anchor="w", fg=FAVCOLOR, text="█ Favorite")
         self.label03 = Label(parent)
-        self.label03.place(x=0, y=28, height=14, width=62)
-        self.label03.configure(bg="black", font="TkFixedFont 7", anchor="w", fg=BLKCOLOR, text="█ Blacklisted")
+        self.label03.place(x=0, y=28, height=14, width=96)
+        self.label03.configure(bg="black", font=la_f, anchor="w", fg=BLKCOLOR, text="█ Blacklisted")
+        self.label04 = Label(parent)
+        self.label04.place(x=0, y=42, height=14, width=96)
+        self.label04.configure(bg="black", font=la_f, anchor="w", fg="white",
+                               text="█ Visible: " + str(NODE_COUNT_FILTER) + "/" + str(NODE_COUNT))
+
         # Control Legend
         self.label1 = Label(parent)
         self.label1.place(relx=0.605, rely=0.95)
-        self.label1.configure(bg=bgc, font="TkFixedFont", fg=fgc, text="Freq:")
+        self.label1.configure(bg=BGC, font="TkFixedFont", fg=FGC, text="Freq:")
         self.label2 = Label(parent)
         self.label2.place(relx=0.72, rely=0.95)
-        self.label2.configure(bg=bgc, font="TkFixedFont", fg=fgc, text="kHz")
+        self.label2.configure(bg=BGC, font="TkFixedFont", fg=FGC, text="kHz")
+
         # Frequency entry field
-        self.entry1 = Entry(parent)
-        self.entry1.place(relx=0.65, rely=0.948, height=23, width=70)
-        self.entry1.configure(bg="white", disabledforeground=dfgc, font="TkFixedFont", insertbackground=fgc, width=214)
-        self.entry1.bind('<Control-a>', self.ctrla)
+        self.freq_input = Entry(parent)
+        self.freq_input.place(relx=0.65, rely=0.948, height=23, width=70)
+        self.freq_input.configure(bg="white", font="TkFixedFont", insertbackground=FGC, width=214)
+        self.freq_input.bind('<Control-a>', self.ctrla)
+        self.freq_input.focus_set()
+
         # Stop Listen button
         self.stop_button = Button(parent)
         self.stop_button.place(relx=0.828, rely=0.95, height=24, width=80)
-        self.stop_button.configure(activebackground=bgc, activeforeground=fgc, bg="red", disabledforeground=dfgc,
-                                   fg="black", highlightbackground=bgc, highlightcolor=fgc, pady="0",
-                                   text="Stop Listen", command=StopListen().run, state="disabled")
+        self.stop_button.configure(activebackground=BGC, activeforeground=FGC, bg="red", disabledforeground=dfgc,
+                                   fg="black", highlightbackground=BGC, highlightcolor=FGC, pady="0",
+                                   text="Stop Listen", command=lambda *args: [StopListen().run(), FillMapWithNodes(
+                                    self.member1).node_selection_inactiveall()], state="disabled")
         # Update button
         self.update_button = Button(parent)
         self.update_button.place(relx=0.915, rely=0.95, height=24, width=80)
-        self.update_button.configure(activebackground=bgc, activeforeground=fgc, bg="orange", disabledforeground=dfgc,
-                                     fg="black", highlightbackground=bgc, highlightcolor=fgc, pady="0",
+        self.update_button.configure(activebackground=BGC, activeforeground=FGC, bg="orange", disabledforeground=dfgc,
+                                     fg="black", highlightbackground=BGC, highlightcolor=FGC, pady="0",
                                      text="update map", command=self.runupdate, state="normal")
         # Console window
         self.console_window = Text(parent)
         self.console_window.place(relx=0.000, rely=0.8, relheight=0.2, relwidth=0.590)
-        self.console_window.configure(bg="black", font="TkTextFont", fg="green", highlightbackground=bgc,
-                                      highlightcolor=fgc, insertbackground=fgc, selectbackground="#c4c4c4",
-                                      selectforeground=fgc, undo="1", width=970, wrap="word")
-        # Adding a scrollbar to console
-        vsb2 = Scrollbar(parent, orient="vertical", command=self.console_window.yview)
-        vsb2.place(relx=0.575, rely=0.8, relheight=0.2, width=16)
-        self.console_window.configure(yscrollcommand=vsb2.set)
+        self.console_window.configure(bg="black", font="TkTextFont", fg="green", highlightbackground=BGC,
+                                      highlightcolor=FGC, insertbackground=FGC, selectbackground="#c4c4c4",
+                                      selectforeground=FGC, undo="1", width=970, wrap="word")
         # Low pass filter scale
         self.lowpass_scale = Scale(parent, from_=0, to=6000)
         self.lowpass_scale.place(relx=0.6, rely=0.8, relwidth=0.39, height=40)
         self.lowpass_scale.set(LP_CUT)
-        self.lowpass_scale.configure(activebackground=bgc, background=bgc, foreground=fgc, highlightbackground=bgc,
-                                     highlightcolor=bgc, orient="horizontal", showvalue="0", troughcolor=dfgc,
+        self.lowpass_scale.configure(activebackground=BGC, background=BGC, foreground=FGC, highlightbackground=BGC,
+                                     highlightcolor=BGC, orient="horizontal", showvalue="0", troughcolor=dfgc,
                                      resolution=10, label="Low Pass Filter (0Hz)", command=self.changelpvalue)
         # High pass filter scale
         self.highpass_scale = Scale(parent, from_=0, to=6000)
         self.highpass_scale.place(relx=0.6, rely=0.87, relwidth=0.39, height=40)
         self.highpass_scale.set(HP_CUT)
-        self.highpass_scale.configure(activebackground=bgc, background=bgc, foreground=fgc, highlightbackground=bgc,
-                                      highlightcolor=bgc, orient="horizontal", showvalue="0", troughcolor=dfgc,
+        self.highpass_scale.configure(activebackground=BGC, background=BGC, foreground=FGC, highlightbackground=BGC,
+                                      highlightcolor=BGC, orient="horizontal", showvalue="0", troughcolor=dfgc,
                                       resolution=10, label="High Pass Filter (3600Hz)", command=self.changehpvalue)
         # Modulation Combobox
         self.modulation_box = ttk.Combobox(parent, state="readonly")
@@ -817,6 +885,7 @@ class MainWindow(Frame):
         MODE = 'USB'
         # Adding some texts to console window at program start
         self.writelog("This is " + VERSION + ", a GUI written for python 2.7 / Tk")
+        self.writelog("Thanks to Pierre (linkfanel) for his listing of available KiwiSDR nodes and their SNR values")
         self.writelog("Low Pass Cut Filter [" + str(LP_CUT) + "Hz] - High Pass Cut Filter [" + str(HP_CUT) + "Hz]")
         if AGC == 1:
             self.writelog("AGC is [ON]")
@@ -828,37 +897,59 @@ class MainWindow(Frame):
                 THRESHOLD) + "dB] - Slope [" + str(SLOPE) + "dB] - Decay [" + str(DECAY).replace("\n", "") + "ms]")
         self.writelog("There are [" + str(NODE_COUNT) + "] KiwiSDRs in the db. Have fun !")
         self.writelog("LEFT click : Start listening -=- RIGHT click : Get informations")
-        #  GUI topbar menus
+
+        # GUI topbar menus
         menubar = Menu(self)
         parent.config(menu=menubar)
+
         # Audio Settings Menu
         menubar.add_command(label="Audio Settings", command=self.show_demod_config)
-        # Map Settings Menu
+
+        # Map Settings menu
         menu_1 = Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Map Settings", menu=menu_1)
         sm1 = Menu(menu_1, tearoff=0)
         sm2 = Menu(menu_1, tearoff=0)
-        menu_1.add_command(label='Change map', command=self.choose_map)  # map choice
-        menu_1.add_cascade(label='Map Filters', menu=sm1, underline=0)  # map filters
-        menu_1.add_cascade(label='Set Colors', menu=sm2, underline=0)  # node colors
-        menu_1.add_command(label='Set Icon size', command=lambda *args: self.default_icon_size())  # icon size config
-        sm1.add_command(label="All", command=lambda *args: [SaveCfg().save_cfg("map", "mapfl", 0), Restart().run()])
-        sm1.add_command(label="Std+Fav", command=lambda *args: [SaveCfg().save_cfg("map", "mapfl", 1), Restart().run()])
-        sm1.add_command(label="Fav", command=lambda *args: [SaveCfg().save_cfg("map", "mapfl", 2), Restart().run()])
-        sm1.add_command(label="Black", command=lambda *args: [SaveCfg().save_cfg("map", "mapfl", 3), Restart().run()])
-        sm1.add_command(label="GPS enabled only",
-                        command=lambda *args: [SaveCfg().save_cfg("map", "mapfl", 4), Restart().run()])
-        sm2.add_command(label="Standard node color", command=lambda *args: [self.color_change(0), Restart().run()])
-        sm2.add_command(label="Favorite node color", command=lambda *args: [self.color_change(1), Restart().run()])
-        sm2.add_command(label="Blacklisted node color", command=lambda *args: [self.color_change(2), Restart().run()])
-        # About Menu
-        menu_2 = Menu(menubar, tearoff=0)
-        menubar.add_cascade(label="?", menu=menu_2)  # about menu
-        menu_2.add_command(label="Help", command=self.help)
-        menu_2.add_command(label="About", command=self.about)
-        menu_2.add_command(label="Check for Update Now...", command=self.checkversion)
-        # Purge Frequency entry box, waiting for the desired FREQUENCY (default=10000kHz)
-        self.entry1.delete(0, 'end')
+        sm3 = Menu(menu_1, tearoff=0)
+        sm4 = Menu(menu_1, tearoff=0)
+        menu_1.add_cascade(label='Default map', menu=sm1, underline=0)
+        menu_1.add_command(label="Save map position", command=self.set_map_position)
+        menu_1.add_cascade(label='Map Filters', menu=sm2, underline=0)
+        menu_1.add_cascade(label='Set Colors', menu=sm3, underline=0)
+        menu_1.add_cascade(label='Set Icon type', menu=sm4, underline=0)
+        menu_1.add_command(label='Set Icon size', command=lambda *args: self.default_icon_size())
+        sm1.add_command(label="Browse maps folder", command=self.choose_map)
+        sm2.add_command(label="All", command=lambda *args: [SaveCfg().save_cfg("map", "mapfl", 0), self.redraw()])
+        sm2.add_command(label="Std+Fav", command=lambda *args: [SaveCfg().save_cfg("map", "mapfl", 1), self.redraw()])
+        sm2.add_command(label="Fav", command=lambda *args: [SaveCfg().save_cfg("map", "mapfl", 2), self.redraw()])
+        sm2.add_command(label="Black", command=lambda *args: [SaveCfg().save_cfg("map", "mapfl", 3), self.redraw()])
+        sm3.add_command(label="Standard node color", command=lambda *args: self.color_change(0))
+        sm3.add_command(label="Favorite node color", command=lambda *args: self.color_change(1))
+        sm3.add_command(label="Blacklisted node color", command=lambda *args: self.color_change(2))
+        sm3.add_command(label="Icon highlight color", command=lambda *args: self.color_change(4))
+        sm4.add_command(label="⚫", command=lambda *args: [SaveCfg().save_cfg("map", "icontype", 0), self.redraw()])
+        sm4.add_command(label="■", command=lambda *args: [SaveCfg().save_cfg("map", "icontype", 1), self.redraw()])
+
+        # GUI design
+        menu_4 = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="GUI design", menu=menu_4)
+        sm5 = Menu(menu_4, tearoff=0)
+        menu_4.add_command(label="GUI background color", command=lambda *args: self.color_change(5))
+        menu_4.add_cascade(label='Console', menu=sm5, underline=0)
+        sm5.add_command(label="background color", command=lambda *args: self.color_change(6))
+        sm5.add_command(label="foreground color", command=lambda *args: self.color_change(7))
+        menu_4.add_command(label="SNR gradiant ratio", command=lambda *args: self.gradiant_change())
+        menu_4.add_command(label="White/Black font color threshold", command=lambda *args: self.threshold_change())
+
+        # About menu
+        menu_6 = Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="?", menu=menu_6)
+        menu_6.add_command(label="Help", command=self.help)
+        menu_6.add_command(label="About", command=self.about)
+        menu_6.add_command(label="Update check", command=self.checkversion)
+
+    def redraw(self):
+        self.member1.redraw_map_cmd()
 
     def modechoice(self, event=None):
         """ Reading the typed FREQUENCY in the FREQUENCY entry box. """
@@ -922,11 +1013,11 @@ class MainWindow(Frame):
         if kwargs.get('agc') == 1:
             tk_demod_cfg.geometry("330x310+200+200")
             ctrlb.configure(text="Manual Gain Control Active")
-            APP.window2.save_demod_cfg(None, agc=0)
+            APP.gui.save_demod_cfg(None, agc=0)
         else:
             tk_demod_cfg.geometry("330x128+200+200")
             ctrlb.configure(text="Automatic Gain Control Active")
-            APP.window2.save_demod_cfg(None, agc=1)
+            APP.gui.save_demod_cfg(None, agc=1)
         ReadCfg().read_cfg()
 
     @staticmethod
@@ -934,23 +1025,24 @@ class MainWindow(Frame):
         """ DirectKiwi demodulation config window HANG button actions. """
         if kwargs.get('hang') == 1:
             hangb.configure(relief="raised")
-            APP.window2.save_demod_cfg(None, hang=0)
+            APP.gui.save_demod_cfg(None, hang=0)
         else:
             hangb.configure(relief="sunken")
-            APP.window2.save_demod_cfg(None, hang=1)
+            APP.gui.save_demod_cfg(None, hang=1)
         ReadCfg().read_cfg()
 
     @staticmethod
     def save_demod_cfg(tk_demod_cfg, **kwargs):
         """ Audio demodulation config window Save button actions. """
         if kwargs.get('lp_cut') is not None:
-            APP.window2.changelpvalue(kwargs.get('lp_cut'))
-            APP.window2.lowpass_scale.set(kwargs.get('lp_cut'))
+            APP.gui.changelpvalue(kwargs.get('lp_cut'))
+            APP.gui.lowpass_scale.set(kwargs.get('lp_cut'))
         if kwargs.get('hp_cut') is not None:
-            APP.window2.changehpvalue(kwargs.get('hp_cut'))
-            APP.window2.highpass_scale.set(kwargs.get('hp_cut'))
+            APP.gui.changehpvalue(kwargs.get('hp_cut'))
+            APP.gui.highpass_scale.set(kwargs.get('hp_cut'))
         for key, value in kwargs.items():
             SaveCfg().save_cfg("demod", key, value)
+            ReadCfg().read_cfg()
         if tk_demod_cfg is not None:
             tk_demod_cfg.destroy()
 
@@ -958,31 +1050,39 @@ class MainWindow(Frame):
     def changelpvalue(lpvalue):
         """ Adapt the high pass slider according to moved low pass slider (should not be higher). """
         global LP_CUT
-        APP.window2.lowpass_scale.configure(label="Low Pass Filter (" + str(lpvalue) + "Hz)")
-        if APP.window2.lowpass_scale.get() >= APP.window2.highpass_scale.get():
-            APP.window2.highpass_scale.set(APP.window2.lowpass_scale.get() + 10)
-            LP_CUT = APP.window2.lowpass_scale.get()
+        # KiwiSDRStream().set_mod(mod='lsb', lc=0, hc=-500, freq=12345)
+        APP.gui.lowpass_scale.configure(label="Low Pass Filter (" + str(lpvalue) + "Hz)")
+        if APP.gui.lowpass_scale.get() >= APP.gui.highpass_scale.get():
+            APP.gui.highpass_scale.set(APP.gui.lowpass_scale.get() + 10)
+            LP_CUT = APP.gui.lowpass_scale.get()
         else:
-            LP_CUT = APP.window2.lowpass_scale.get()
+            LP_CUT = APP.gui.lowpass_scale.get()
         return LP_CUT
 
     @staticmethod
     def changehpvalue(hpvalue):
         """ Adapt the low pass slider according to moved high pass slider (should not be lower). """
         global HP_CUT
-        APP.window2.highpass_scale.configure(label="High Pass Filter (" + str(hpvalue) + "Hz)")
-        if APP.window2.highpass_scale.get() <= APP.window2.lowpass_scale.get():
-            APP.window2.lowpass_scale.set(APP.window2.highpass_scale.get() - 10)
-            HP_CUT = APP.window2.highpass_scale.get()
+        APP.gui.highpass_scale.configure(label="High Pass Filter (" + str(hpvalue) + "Hz)")
+        if APP.gui.highpass_scale.get() <= APP.gui.lowpass_scale.get():
+            APP.gui.lowpass_scale.set(APP.gui.highpass_scale.get() - 10)
+            HP_CUT = APP.gui.highpass_scale.get()
         else:
-            HP_CUT = APP.window2.highpass_scale.get()
+            HP_CUT = APP.gui.highpass_scale.get()
         return HP_CUT
 
     @staticmethod
     def ctrla(event):
-        """ Allow ctrl+A in FREQUENCY box. """
+        """ Allow ctrl+A in frequency input textbox. """
         event.widget.select_range(0, 'end')
         event.widget.icursor('end')
+        return 'break'
+
+    @staticmethod
+    def freq_focus(event):
+        """ Adding Ctrl+F shortcut to focus the frequency input box. """
+        APP.gui.freq_input.focus_set()
+        APP.gui.freq_input.select_range(0, 'end')
         return 'break'
 
     def writelog(self, msg):
@@ -998,16 +1098,16 @@ class MainWindow(Frame):
         master = Tk()
         help_menu = Message(master, text="""
     Enter a frequency and choose a modulation first
-    
+
     Left click to start demodulating
     Right click to get node informations
     Get a real-time waterfall & SNR measurement with the Check SNR line
     Add/Remove nodes from favorite/blacklist with the appropriate button
-    
+
     Map filtering is possible using the Map Settings menu
-    
+
     Instant switch from node to node is possible using Left click on another icon
-    
+
     """, width=1000, font="TkFixedFont 8", bg="white", anchor="center")
         help_menu.pack()
 
@@ -1036,7 +1136,7 @@ class MainWindow(Frame):
         ICON_CFG = Tk()
         ICON_CFG.geometry("280x50+50+50")
         ICON_CFG.title('Default Icon size')
-        icon_slider = Scale(ICON_CFG, from_=2, to=10)
+        icon_slider = Scale(ICON_CFG, from_=1, to=5)
         icon_slider.place(x=10, y=0, width=200, height=100)
         icon_slider.configure(orient="horizontal", showvalue="1", resolution=1, label="")
         icon_slider.set(ICONSIZE)
@@ -1047,10 +1147,54 @@ class MainWindow(Frame):
     @staticmethod
     def set_default_icon_size(isize):
         """ Save choosed icon size to config file. """
-        APP.window2.writelog("Icon size set to " + str(isize))
+        APP.gui.writelog("Icon size set to " + str(isize))
         SaveCfg().save_cfg("map", "iconsize", isize)
         ICON_CFG.destroy()
-        Restart().run()
+        APP.gui.redraw()
+
+    def gradiant_change(self):
+        """ Change SNR gradiant ratio window. """
+        global GRAD_CFG
+        GRAD_CFG = Tk()
+        GRAD_CFG.geometry("280x50+50+50")
+        GRAD_CFG.title('Default SNR gradiant ratio')
+        icon_slider2 = Scale(GRAD_CFG, from_=1, to=50)
+        icon_slider2.place(x=10, y=0, width=200, height=100)
+        icon_slider2.configure(orient="horizontal", showvalue="1", resolution=1, label="")
+        icon_slider2.set(GRAD)
+        icon_save_button2 = Button(GRAD_CFG, command=lambda *args: self.set_default_gradiant(icon_slider2.get()))
+        icon_save_button2.place(x=220, y=20, height=20)
+        icon_save_button2.configure(text="Save")
+
+    @staticmethod
+    def set_default_gradiant(grad_val):
+        """ Save choosed icon size to config file. """
+        APP.gui.writelog("SNR gradiant set to " + str(grad_val))
+        SaveCfg().save_cfg("guicolors", "grad", grad_val)
+        GRAD_CFG.destroy()
+        APP.gui.redraw()
+
+    def threshold_change(self):
+        """ Change SNR gradiant ratio window. """
+        global THRES_CFG
+        THRES_CFG = Tk()
+        THRES_CFG.geometry("280x50+50+50")
+        THRES_CFG.title('Black/White font color threshold')
+        icon_slider3 = Scale(THRES_CFG, from_=1, to=255)
+        icon_slider3.place(x=10, y=0, width=200, height=100)
+        icon_slider3.configure(orient="horizontal", showvalue="1", resolution=1, label="")
+        icon_slider3.set(THRES)
+        icon_save_button2 = Button(THRES_CFG, command=lambda *args: self.set_font_threshold(icon_slider3.get()))
+        icon_save_button2.place(x=220, y=20, height=20)
+        icon_save_button2.configure(text="Save")
+
+    @staticmethod
+    def set_font_threshold(thres_val):
+        """ Save Black/White font color threshold (in node menus) to config file. """
+        APP.gui.writelog("Black/White font color threshold set to " + str(thres_val))
+        SaveCfg().save_cfg("guicolors", "thres", thres_val)
+        THRES_CFG.destroy()
+        APP.gui.redraw()
 
     @staticmethod
     def color_change(value):
@@ -1060,27 +1204,65 @@ class MainWindow(Frame):
         if color_n:
             if value == 0:
                 SaveCfg().save_cfg("map", "std", color_n)
-            elif value == 1:
+                APP.gui.label01.configure(fg=color_n)
+            if value == 1:
                 SaveCfg().save_cfg("map", "fav", color_n)
-            else:
+                APP.gui.label02.configure(fg=color_n)
+            if value == 2:
                 SaveCfg().save_cfg("map", "blk", color_n)
+                APP.gui.label03.configure(fg=color_n)
+            if value == 4:
+                SaveCfg().save_cfg("map", "hlt", color_n)
+                APP.gui.writelog("Icon highlight color is now " + color_n)
+            if value == 5:
+                SaveCfg().save_cfg("guicolors", "main_b", color_n)
+                APP.gui.writelog("GUI background color is now " + color_n)
+                nums = ['0', '1', '2']
+                chg_list = [APP.gui.ctrl_backgd, APP.gui.label1, APP.gui.label2]
+                for x, l in zip(nums, chg_list):
+                    l.configure(background=color_n)
+                    l.configure(foreground=GuiCanvas.get_font_color(color_n))
+                    SaveCfg().save_cfg("guicolors", "main_f", GuiCanvas.get_font_color(color_n))
+            if value == 6:
+                SaveCfg().save_cfg("guicolors", "cons_b", color_n)
+                APP.gui.writelog("Console background color is now " + color_n)
+                APP.gui.console_window.configure(bg=color_n)
+            if value == 7:
+                SaveCfg().save_cfg("guicolors", "cons_f", color_n)
+                APP.gui.writelog("Console foreground color is now " + color_n)
+                APP.gui.console_window.configure(fg=color_n)
         else:
             pass
+        APP.gui.redraw()
 
     @staticmethod
     def choose_map():
-        """ Change map menu and Save to config file. """
+        """ Change map menu and save to config file. """
         mapname = tkFileDialog.askopenfilename(initialdir="maps")
         if not mapname or not mapname.lower().endswith(('.png', '.jpg', '.jpeg')):
-            tkMessageBox.showinfo("", message="Error, select png/jpg/jpeg files only.\n Loading default map now.")
+            tkMessageBox.showinfo("", message="Error, select png/jpg/jpeg files only.")
             mapname = "maps/directKiwi_map_grayscale_with_sea.jpg"
         SaveCfg().save_cfg("map", "file", "maps/" + os.path.split(mapname)[1])
+        SaveCfg().save_cfg("map", "x0", str(b_box2[0]))
+        SaveCfg().save_cfg("map", "y0", str(b_box2[1]))
+        SaveCfg().save_cfg("map", "x1", str(b_box2[2]))
+        SaveCfg().save_cfg("map", "y1", str(b_box2[3]))
         Restart().run()
 
+    @staticmethod
+    def set_map_position():
+        """ Remember the map position and save to config file. """
+        SaveCfg().save_cfg("map", "x0", str(b_box2[0]))
+        SaveCfg().save_cfg("map", "y0", str(b_box2[1]))
+        SaveCfg().save_cfg("map", "x1", str(b_box2[2]))
+        SaveCfg().save_cfg("map", "y1", str(b_box2[3]))
+        APP.gui.writelog("Default map position has been saved in config file")
+
     def runupdate(self):
-        """ Run update check when button is pushed. """
+        """ Run Web source availability check. """
         self.update_button.configure(state="disabled")
-        CheckUpdate(self).start()
+        # start the Check update thread
+        CheckUpdate().start()
 
     @staticmethod
     def checkversion():
@@ -1089,11 +1271,11 @@ class MainWindow(Frame):
             checkver = requests.get('https://raw.githubusercontent.com/llinkz/directKiwi/master/README.md', timeout=2)
             gitsrctext = checkver.text.split("\n")
             if float(gitsrctext[0][2:].split("v", 1)[1]) > float(VERSION.split("v", 1)[1][:4]):
-                tkMessageBox.showinfo(title="UPDATE INFORMATION", message=str(gitsrctext[0][2:]) + " released !")
+                tkMessageBox.showinfo(title="", message=str(gitsrctext[0][2:]) + " released !")
             else:
-                pass
+                tkMessageBox.showinfo(title="", message="No update found.")
         except (ImportError, requests.RequestException):
-            print "Unable to verify version information. Sorry."
+            print("Unable to verify version information. Sorry.")
 
 
 class MainW(Tk, object):
@@ -1102,48 +1284,19 @@ class MainW(Tk, object):
     def __init__(self):
         Tk.__init__(self)
         Tk.option_add(self, '*Dialog.msg.font', 'TkFixedFont 7')
-        self.window = ZoomAdvanced(self)
-        self.window2 = MainWindow(self)
+        self.gui = MainWindow(self)
 
 
 def on_closing():
     """ Actions to perform when software is closed using the top-right check button. """
-    global CLIENT_PID
     if tkMessageBox.askokcancel("Quit", "Do you want to quit?"):
-        try:  # to kill kiwirecorder.py
-            os.kill(CLIENT_PID, signal.SIGTERM)
-        except (NameError, OSError):
-            print ""
-        else:
-            os.kill(CLIENT_PID, signal.SIGTERM)
         os.kill(os.getpid(), signal.SIGTERM)
         APP.destroy()
-
-
-class Restart(object):
-    """ GUI Restart routine. """
-
-    def __init__(self):
-        pass
-
-    def __str__(self):
-        return self.__class__.__name__
-
-    @staticmethod
-    def run():
-        """ GUI Restart routine. """
-        global CLIENT_PID
-        try:
-            os.kill(CLIENT_PID, signal.SIGTERM)
-        except (NameError, OSError):
-            print ".Restarting GUI."
-        else:
-            os.kill(CLIENT_PID, signal.SIGTERM)
-        os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 if __name__ == '__main__':
     APP = MainW()
     APP.title(VERSION)
     APP.protocol("WM_DELETE_WINDOW", on_closing)
+    APP.bind("<Control-f>", MainWindow.freq_focus)
     APP.mainloop()
