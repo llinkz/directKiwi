@@ -52,7 +52,8 @@ class Restart(object):
 
     @staticmethod
     def run():
-        os.execv(sys.executable, [sys.executable] + sys.argv)  # restart directKiwi.py
+        APP.destroy()
+        subprocess.call([sys.executable, os.path.abspath(__file__)])
 
 
 class ReadCfg(object):
