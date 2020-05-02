@@ -1,2 +1,1 @@
-@echo off
-pythonw directKiwi.py
+start /affinity 1 pythonw directKiwi.py
