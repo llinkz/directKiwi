@@ -15,6 +15,7 @@ import signal
 import subprocess
 from subprocess import PIPE
 import sys
+import platform
 import threading
 import time
 import webbrowser
@@ -28,20 +29,18 @@ if sys.version_info[0] == 2:
     import tkFileDialog
     import tkMessageBox
     import ttk
-    from Tkinter import Checkbutton, END, CURRENT, NORMAL, Message, Scale, IntVar, Listbox
+    from Tkinter import Checkbutton, END, CURRENT, NORMAL, Message, Scale
     from Tkinter import Entry, Text, Menu, Label, Button, Frame, Tk, Canvas, PhotoImage
     from tkColorChooser import askcolor
-    from tkSimpleDialog import askstring, askinteger
 else:
     import tkinter.filedialog as tkFileDialog
     import tkinter.messagebox as tkMessageBox
-    from tkinter import Checkbutton, END, CURRENT, NORMAL, Message, Scale, IntVar, Listbox
+    from tkinter import Checkbutton, END, CURRENT, NORMAL, Message, Scale
     from tkinter import Entry, Text, Menu, Label, Button, Frame, Tk, Canvas, PhotoImage, ttk
     from tkinter.colorchooser import askcolor
-    from tkinter.simpledialog import askstring, askinteger
 
 
-VERSION = "directKiwi v7.00"
+VERSION = "directKiwi v7.10"
 
 
 class Restart(object):
@@ -52,7 +51,10 @@ class Restart(object):
 
     @staticmethod
     def run():
-        os.execv(sys.executable, [sys.executable] + sys.argv)  # restart directKiwi.py
+        if platform.system() == "Windows":
+            os.execlp("pythonw.exe", "pythonw.exe", "directKiwi.py")
+        else:
+            os.execv(sys.executable, [sys.executable] + sys.argv)
 
 
 class ReadCfg(object):
@@ -247,21 +249,22 @@ class StartKiwiSDRclient(threading.Thread):
         """ DirectKiwi Main audio socket process. """
         global LISTENMODE, CLIENT_PID
         try:
-            # socket_connect = subprocess.Popen(
-            #     [sys.executable, 'KiwiSDRclient.py', '-s', HOST.rsplit("$", 10)[1].rsplit(":", 2)[0], '-p',
-            #      HOST.rsplit("$", 10)[1].rsplit(":", 2)[1], '-f', FREQUENCY, '-m', MODE, '-L', str(LP_CUT), '-H',
-            #      str(HP_CUT), '-g', str(AGC), str(MGAIN), str(HANG), str(THRESHOLD), str(SLOPE), str(DECAY),
-            #      VERSION.replace(' ', '_')], stdout=PIPE, shell=False)
             if AGC == 1:
                 agc_array = False
             else:
                 # default MGC =>  gain = 50  hang = 1  thresh = -100  slope = 6  decay = 1000
                 agc_array = ['-g ' + str(MGAIN), HANG, THRESHOLD, SLOPE, DECAY]
-                                                                #
+            if platform.system() == "Windows":
+                client_type = VERSION + ' [win]'
+            elif platform.system() == "Darwin":
+                client_type = VERSION + ' [macOS]'
+            else:
+                client_type = VERSION + ' [linux]'
             socket_connect = subprocess.Popen([sys.executable, 'kiwiclient' + os.sep + 'kiwirecorder.py', '-s',
                                                HOST.rsplit("$", 4)[1].rsplit(":", 2)[0], '-p',
                                                HOST.rsplit("$", 4)[1].rsplit(":", 2)[1], '-f', FREQUENCY, '-m', MODE,
-                                               '-L', str(LP_CUT), '-H', str(HP_CUT), '-u', VERSION.replace(' ', '_'),
+                                               '-L', str(LP_CUT), '-H', str(HP_CUT), '-u',
+                                               client_type.replace(' ', '_'),
                                                '-q', '-a', (" ,".join(map(str, agc_array)) if agc_array else ''),
                                                '--log=debug'], stdout=PIPE, shell=False)
             CLIENT_PID = socket_connect.pid
@@ -407,16 +410,19 @@ class FillMapWithNodes(object):
                     self.parent.canvas.create_rectangle(tmp_lon - is_delta, tmp_lat - is_delta, tmp_lon + is_delta,
                                                         tmp_lat + is_delta, fill='', outline=HIGHLIGHT,
                                                         tag=node_tag_item + "$#")
+                self.parent.canvas.tag_bind(node_tag_item + "$#", "<Button-1>", self.parent.onclickleft)
 
     def node_selection_inactive(self, node_mac):
         """ Removing additionnal highlight on selected node icon. """
         for node_tag_item in tag_list:
             if node_mac in node_tag_item:
+                self.parent.canvas.tag_unbind(node_tag_item + "$#", "<Button-1>")
                 self.parent.canvas.delete(node_tag_item + "$#")
 
     def node_selection_inactiveall(self):
         """ Removing ALL additionnal highlights on selected nodes icons. """
         for node_tag_item in tag_list:
+            self.parent.canvas.tag_unbind(node_tag_item + "$#", "<Button-1>")
             self.parent.canvas.delete(node_tag_item + "$#")
 
     def after_update(self):
@@ -453,7 +459,6 @@ class GuiCanvas(Frame):
         # self.canvas.bind_all('<MouseWheel>', self.wheel)  # Windows Zoom
         # self.canvas.bind('<Button-5>', self.wheel)  # Linux Zoom
         # self.canvas.bind('<Button-4>', self.wheel)  # Linux Zoom
-
         self.image = Image.open(DMAP)
         self.width, self.height = self.image.size
         self.imscale = 1.0  # scale for the image
@@ -481,15 +486,77 @@ class GuiCanvas(Frame):
         """ KnownPoint deletion process. """
         FillMapWithNodes(self).delete_point(n.rsplit(' (')[0])
 
-    def onclickleft(self, event=None):
+    def onclickright(self, event=None):
+        """ Right Mouse Click bind to show node general menu. """
+        global HOST
+        menu0 = Menu(self, tearoff=0, fg="black", bg=BGC, font='TkFixedFont 7')  # node overlap list menu
+        menu1 = Menu(self, tearoff=0, fg="black", bg=BGC, font='TkFixedFont 7')  # main node menu
+        # search for overlapping nodes
+        overlap_range = ICONSIZE * 4
+        overlap_rect = (self.canvas.canvasx(event.x) - overlap_range), (self.canvas.canvasy(event.y) - overlap_range), (
+                    self.canvas.canvasx(event.x) + overlap_range), (self.canvas.canvasy(event.y) + overlap_range)
+        node_overlap_match = self.canvas.find_enclosed(*overlap_rect)
+        if len(node_overlap_match) > 1:  # node icon overlap found, displays menu0
+            for el1, el2 in enumerate(node_overlap_match):
+                if "$#" not in str(self.canvas.gettags(el2)):  # dont display node highlight tags
+                    HOST = self.canvas.gettags(self.canvas.find_withtag(el2))[0]
+                    # mykeys = ['mac', 'url', 'snr', 'lat', 'lon']
+                    # n_field    0      1      2      3      4
+                    n_field = HOST.rsplit("$", 4)
+                    # Color gradiant proportionnal to SNR value
+                    snr_gradiant = (int(n_field[2]) - 30) * GRAD
+                    # rbg = self.color_variant("#FF0000", snr_gradiant)
+                    # Dynamic foreground (adapting font to white or black depending on luminosity)
+                    dfg = self.get_font_color((self.color_variant("#FFFF00", snr_gradiant)))
+                    nodec = BLKCOLOR if n_field[0] in BLACKLIST else FAVCOLOR if n_field[0] in WHITELIST else STDCOLOR
+                    cbg = self.color_variant(nodec, snr_gradiant)
+                    menu0.add_command(label=n_field[1], background=cbg, foreground=dfg,
+                                      command=lambda x=HOST: self.create_node_menu(x, event.x_root, event.y_root,
+                                                                                   menu1))
+                else:
+                    pass
+            menu0.tk_popup(event.x_root, event.y_root)
+        else:
+            HOST = self.canvas.gettags(self.canvas.find_withtag(CURRENT))[0]
+            self.create_node_menu(HOST, event.x_root, event.y_root, menu1)
+
+    def onclickleft(self, event):
         """ Left Mouse Click bind to start demodulation from the node. """
+        global HOST
+        menu0 = Menu(self, tearoff=0, fg="black", bg=BGC, font='TkFixedFont 7')  # node overlap list menu
+        # search for overlapping nodes
+        overlap_range = ICONSIZE * 4
+        overlap_rect = (self.canvas.canvasx(event.x) - overlap_range), (self.canvas.canvasy(event.y) - overlap_range), (
+                    self.canvas.canvasx(event.x) + overlap_range), (self.canvas.canvasy(event.y) + overlap_range)
+        node_overlap_match = self.canvas.find_enclosed(*overlap_rect)
+        if len(node_overlap_match) > 1:  # node icon overlap found, displays menu0
+            for el1, el2 in enumerate(node_overlap_match):
+                if "$#" not in str(self.canvas.gettags(el2)):  # dont display node highlight tags
+                    HOST = self.canvas.gettags(self.canvas.find_withtag(el2))[0]
+                    # mykeys = ['mac', 'url', 'snr', 'lat', 'lon']
+                    # n_field    0      1      2      3      4
+                    n_field = HOST.rsplit("$", 4)
+                    # Color gradiant proportionnal to SNR value
+                    snr_gradiant = (int(n_field[2]) - 30) * GRAD
+                    # Dynamic foreground (adapting font to white or black depending on luminosity)
+                    dfg = self.get_font_color((self.color_variant("#FFFF00", snr_gradiant)))
+                    nodec = BLKCOLOR if n_field[0] in BLACKLIST else FAVCOLOR if n_field[0] in WHITELIST else STDCOLOR
+                    cbg = self.color_variant(nodec, snr_gradiant)
+
+                    menu0.add_command(label=n_field[1], background=cbg, foreground=dfg,
+                                      command=lambda x=HOST: self.start_listen(x))
+                else:
+                    pass
+            menu0.tk_popup(event.x_root, event.y_root)
+        else:
+            HOST = self.canvas.gettags(self.canvas.find_withtag(CURRENT))[0]
+            self.start_listen(HOST)
+
+    def start_listen(self, kiwinodetag):
         global HOST, FREQUENCY, LISTENMODE, CLIENT_PID
-        HOST = self.canvas.gettags(self.canvas.find_withtag(CURRENT))[0]
-        # mykeys = ['mac', 'url', 'snr', 'lat', 'lon']
-        # n_field    0      1      2      3      4
-        n_field = HOST.rsplit("$", 4)
-        FREQUENCY = APP.gui.freq_input.get()
+        n_field = kiwinodetag.rsplit("$", 4)
         permit_web = "no"
+        FREQUENCY = APP.gui.freq_input.get()
         if FREQUENCY == "" or float(FREQUENCY) < 5 or float(FREQUENCY) > 29995:
             APP.gui.writelog("Check FREQUENCY field !")
         else:
@@ -515,15 +582,15 @@ class GuiCanvas(Frame):
                         # 9 = gps coordinates              19 = Antenna description
                         # 20 = KiwiSDR uptime (in sec)
                         if i_node[6] == i_node[7]:  # users Vs. users_max
-                            APP.gui.writelog(" " + str(HOST).rsplit("$", 4)[1].rsplit(":", 2)[0] + " is full.")
+                            APP.gui.writelog(" " + n_field[1].rsplit(":", 2)[0] + " is full.")
                         elif infonodes[1].rsplit("=", 2)[1] == "yes":  # offline=no/yes
-                            APP.gui.writelog(" " + str(HOST).rsplit("$", 4)[1].rsplit(":", 2)[0] + " is offline.")
+                            APP.gui.writelog(" " + n_field[1].rsplit(":", 2)[0] + " is offline.")
                         else:
                             permit_web = "yes"
                     except IndexError as wrong_status:
-                        APP.gui.writelog("Sorry " + str(HOST).rsplit("$", 4)[1].rsplit(":", 2)[0] + " is unreachable.")
+                        APP.gui.writelog("Sorry " + n_field[1].rsplit(":", 2)[0] + " is unreachable.")
             except requests.RequestException:
-                APP.gui.writelog("Sorry " + str(HOST).rsplit("$", 4)[1].rsplit(":", 2)[0] + " is unreachable.")
+                APP.gui.writelog("Sorry " + n_field[1].rsplit(":", 2)[0] + " is unreachable.")
             if permit_web == "yes":
                 if not LISTENMODE:
                     StartKiwiSDRclient().start()
@@ -537,32 +604,21 @@ class GuiCanvas(Frame):
                     except NameError:
                         pass
                 APP.gui.writelog(" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ")
-                APP.gui.writelog(
-                    "[ " + str(HOST).rsplit("$", 4)[1].rsplit(":", 2)[0] + " / " + FREQUENCY + " kHz / " + str(
-                        MODE).upper() + " / " + str(HP_CUT - LP_CUT) + "Hz ]")
-                APP.title(str(VERSION) + " - [ " + str(HOST).rsplit("$", 4)[1].rsplit(":", 2)[
-                    0] + " / " + FREQUENCY + " kHz / " + str(MODE).upper() + " / " + str(HP_CUT - LP_CUT) + "Hz ]")
+                APP.gui.writelog("[ " + n_field[1].rsplit(":", 2)[0] + " / " + FREQUENCY + " kHz / " + str(
+                    MODE).upper() + " / " + str(HP_CUT - LP_CUT) + "Hz ]")
+                APP.title(str(VERSION) + " - [ " + n_field[1].rsplit(":", 2)[0] + " / " + FREQUENCY + " kHz / " + str(
+                    MODE).upper() + " / " + str(HP_CUT - LP_CUT) + "Hz ]")
 
-    def onclickright(self, event):
-        """ Right Mouse Click bind to watch node SNR values / web browser / fav / blacklist. """
-        global HOST
-        HOST = self.canvas.gettags(self.canvas.find_withtag(CURRENT))[0]
-        menu = Menu(self, tearoff=0, fg="black", bg=BGC, font='TkFixedFont 7')
-        # mykeys = ['mac', 'url', 'snr', 'lat', 'lon']
-        # n_field    0      1      2      3      4
-        n_field = HOST.rsplit("$", 4)
-        # Color gradiant proportionnal to SNR value
+    def create_node_menu(self, kiwinodetag, popx, popy, menu):
+        n_field = kiwinodetag.rsplit("$", 4)
         snr_gradiant = (int(n_field[2]) - 30) * GRAD
-        if n_field[0] in WHITELIST:
-            nodecolor = FAVCOLOR
-        else:
-            nodecolor = STDCOLOR
+        nodec = BLKCOLOR if n_field[0] in BLACKLIST else FAVCOLOR if n_field[0] in WHITELIST else STDCOLOR
         # Red background
         rbg = self.color_variant("#FF0000", snr_gradiant)
         # Dynamic foreground (adapting font to white or black depending on luminosity)
         dfg = self.get_font_color((self.color_variant("#FFFF00", snr_gradiant)))
         # Colorized background (depending on Favorite node or not)
-        cbg = self.color_variant(nodecolor, snr_gradiant)
+        cbg = self.color_variant(nodec, snr_gradiant)
         try:  # check if the node is answering
             chktimeout = 2  # timeout of the node check
             checkthenode = requests.get("http://" + n_field[1] + "/status", timeout=chktimeout)
@@ -621,39 +677,29 @@ class GuiCanvas(Frame):
             # Add Open in Web browser lines
             menu.add_separator()
             menu.add_command(label="Open " + n_field[1] + " in Web browser", state=NORMAL, background=cbg,
-                             foreground=dfg, command=lambda: self.openinbrowser(0, APP.gui.freq_input.get()))
+                             foreground=dfg, command=lambda: self.openinbrowser(n_field, 0, APP.gui.freq_input.get()))
             menu.add_command(label="Open " + n_field[1] + " in Web browser with pre-set TDoA extension loaded",
                              state=NORMAL, background=cbg, foreground=dfg,
-                             command=lambda: self.openinbrowser(1, APP.gui.freq_input.get()))
+                             command=lambda: self.openinbrowser(n_field, 1, APP.gui.freq_input.get()))
             menu.add_command(label="Open " + n_field[1] + "/status", background=cbg, foreground=dfg,
-                             command=lambda: self.openinbrowser(2, None))
-            # parts removed because of python3 compatibility not created yet
-            # if LISTENMODE == "0":
-            #     # Add demodulation process line
-            #     menu.add_cascade(label="Listen to that frequency using " + n_field[1], state=NORMAL, background=cbg,
-            #                      foreground=dfg, menu=menu2)
-            #     menu2.add_command(label="USB", background=cbg, foreground=dfg,
-            #                       command=lambda *args: self.listenmode("usb"))
-            #     menu2.add_command(label="LSB", background=cbg, foreground=dfg,
-            #                       command=lambda *args: self.listenmode("lsb"))
-            #     menu2.add_command(label="AM", background=cbg, foreground=dfg,
-            #                       command=lambda *args: self.listenmode("am"))
-            # else:
-            #     menu.add_command(label="Stop Listen Mode", state=NORMAL, background=cbg, foreground=dfg,
-            #                      command=self.stoplistenmode)
+                             command=lambda: self.openinbrowser(n_field, 2, None))
         if permit_web:
             menu.add_command(label="Get Waterfall & SNR from " + n_field[1], background=cbg, foreground=dfg,
                              command=CheckSnr(n_field[1]).start)
         menu.add_separator()
         if n_field[0] in WHITELIST:  # if node is a favorite
-            menu.add_command(label="remove from favorites", background=cbg, foreground=dfg, command=self.remfavorite)
+            menu.add_command(label="remove from favorites", background=cbg, foreground=dfg,
+                             command=lambda x=n_field[0]: self.remfavorite(x))
         elif n_field[0] not in BLACKLIST:
-            menu.add_command(label="add to favorites", background=cbg, foreground=dfg, command=self.addfavorite)
+            menu.add_command(label="add to favorites", background=cbg, foreground=dfg,
+                             command=lambda x=n_field[0]: self.addfavorite(x))
         if n_field[0] in BLACKLIST:  # if node is blacklisted
-            menu.add_command(label="remove from blacklist", background=cbg, foreground=dfg, command=self.remblacklist)
+            menu.add_command(label="remove from blacklist", background=cbg, foreground=dfg,
+                             command=lambda x=n_field[0]: self.remblacklist(x))
         elif n_field[0] not in WHITELIST:
-            menu.add_command(label="add to blacklist", background=cbg, foreground=dfg, command=self.addblacklist)
-        menu.post(event.x_root, event.y_root)  # popup placement // node icon
+            menu.add_command(label="add to blacklist", background=cbg, foreground=dfg,
+                             command=lambda x=n_field[0]: self.addblacklist(x))
+        menu.tk_popup(int(popx), int(popy))  # popup placement // node icon
 
     @staticmethod
     def get_font_color(font_color):
@@ -677,43 +723,43 @@ class GuiCanvas(Frame):
         return "#" + "".join(["0" + hex(i)[2:] if len(hex(i)[2:]) < 2 else hex(i)[2:] for i in new_rgb_int])
 
     @staticmethod
-    def addfavorite():
+    def addfavorite(node):
         """ Add Favorite node submenu entry. """
-        WHITELIST.append(HOST.rsplit("$", 4)[0])
+        WHITELIST.append(node)
         SaveCfg().save_cfg("nodes", "whitelist", WHITELIST)
         APP.gui.redraw()
 
     @staticmethod
-    def remfavorite():
+    def remfavorite(node):
         """ Remove Favorite node submenu entry. """
-        WHITELIST.remove(HOST.rsplit("$", 4)[0])
+        WHITELIST.remove(node)
         SaveCfg().save_cfg("nodes", "whitelist", WHITELIST)
         APP.gui.redraw()
 
     @staticmethod
-    def addblacklist():
+    def addblacklist(node):
         """ Add Blacklist node submenu entry. """
-        BLACKLIST.append(HOST.rsplit("$", 4)[0])
+        BLACKLIST.append(node)
         SaveCfg().save_cfg("nodes", "blacklist", BLACKLIST)
         APP.gui.redraw()
 
     @staticmethod
-    def remblacklist():
+    def remblacklist(node):
         """ Remove Blacklist node submenu entry. """
-        BLACKLIST.remove(HOST.rsplit("$", 4)[0])
+        BLACKLIST.remove(node)
         SaveCfg().save_cfg("nodes", "blacklist", BLACKLIST)
         APP.gui.redraw()
 
     @staticmethod
-    def openinbrowser(extension, freq):
+    def openinbrowser(node_id, extension, freq):
         """ Web browser call to connect on the node (default = IQ mode & fixed zoom level at 8). """
         if extension == 0:
-            url = "http://" + str(HOST).rsplit("$", 4)[1] + "/?f=" + freq + "iqz8"
+            url = "http://" + node_id[1] + "/?f=" + freq + MODE.lower() + "z8"
         elif extension == 2:
-            url = "http://" + str(HOST).rsplit("$", 4)[1] + "/status"
+            url = "http://" + node_id[1] + "/status"
         else:
-            url = "http://" + str(HOST).rsplit("$", 4)[1] + "/?f=" + freq + "iqz8&ext=tdoa,lat:" + \
-                  str(HOST).rsplit("$", 4)[3] + ",lon:" + str(HOST).rsplit("$", 4)[4] + ",z:5"
+            url = "http://" + node_id[1] + "/?f=" + freq + "iqz8&ext=tdoa,lat:" + node_id[3] + ",lon:" + node_id[
+                4] + ",z:5"
         webbrowser.open_new(url)
 
     def populate(self, action, sel_node_tag):
@@ -729,14 +775,16 @@ class GuiCanvas(Frame):
 
     def move_to(self, event):
         """ Move to. """
-        self.canvas.scan_dragto(event.x, event.y, gain=1)
-        self.show_image()  # redraw the image
+        if 'HOST' in globals() and "current" not in self.canvas.gettags(self.canvas.find_withtag(CURRENT))[0]:
+            pass
+        elif "current" in self.canvas.gettags(self.canvas.find_withtag(CURRENT))[0]:
+            self.canvas.scan_dragto(event.x, event.y, gain=1)
+            self.show_image()  # redraw the image
 
     def wheel(self, event):
         """ Routine for mouse wheel actions. """
         x_eve = self.canvas.canvasx(event.x)
         y_eve = self.canvas.canvasy(event.y)
-        global image_scale
         bbox = self.canvas.bbox(self.container)  # get image area
         if bbox[0] < x_eve < bbox[2] and bbox[1] < y_eve < bbox[3]:
             pass  # Ok! Inside the image
@@ -758,8 +806,6 @@ class GuiCanvas(Frame):
             scale *= self.delta
         # rescale all canvas objects
         # scale = 2.0 or 0.5
-        image_scale = self.imscale
-        # APP.gui.label04.configure(text="Map Zoom : " + str(int(image_scale)))
         self.canvas.scale('all', x_eve, y_eve, scale, scale)
         # self.canvas.scale('')
         self.show_image()
@@ -804,10 +850,9 @@ class MainWindow(Frame):
     def __init__(self, parent):
         Frame.__init__(self, parent)
         self.member1 = GuiCanvas(parent)
-        global image_scale, MODE
+        global MODE
         dfgc = '#a3a3a3'  # GUI (disabled) foreground color
         la_f = "TkFixedFont 7 bold"
-        image_scale = 1
         # Control panel background
         self.ctrl_backgd = Label(parent)
         self.ctrl_backgd.place(relx=0, rely=0.8, relheight=0.3, relwidth=1)
@@ -815,16 +860,16 @@ class MainWindow(Frame):
 
         # Map Legend
         self.label01 = Label(parent)
-        self.label01.place(x=0, y=0, height=14, width=96)
+        self.label01.place(x=0, y=0, height=14, width=100)
         self.label01.configure(bg="black", font=la_f, anchor="w", fg=STDCOLOR, text="█ Standard")
         self.label02 = Label(parent)
-        self.label02.place(x=0, y=14, height=14, width=96)
+        self.label02.place(x=0, y=14, height=14, width=100)
         self.label02.configure(bg="black", font=la_f, anchor="w", fg=FAVCOLOR, text="█ Favorite")
         self.label03 = Label(parent)
-        self.label03.place(x=0, y=28, height=14, width=96)
+        self.label03.place(x=0, y=28, height=14, width=100)
         self.label03.configure(bg="black", font=la_f, anchor="w", fg=BLKCOLOR, text="█ Blacklisted")
         self.label04 = Label(parent)
-        self.label04.place(x=0, y=42, height=14, width=96)
+        self.label04.place(x=0, y=42, height=14, width=100)
         self.label04.configure(bg="black", font=la_f, anchor="w", fg="white",
                                text="█ Visible: " + str(NODE_COUNT_FILTER) + "/" + str(NODE_COUNT))
 
@@ -859,7 +904,7 @@ class MainWindow(Frame):
         # Console window
         self.console_window = Text(parent)
         self.console_window.place(relx=0.000, rely=0.8, relheight=0.2, relwidth=0.590)
-        self.console_window.configure(bg="black", font="TkTextFont", fg="green", highlightbackground=BGC,
+        self.console_window.configure(bg=CONS_B, font="TkTextFont", fg=CONS_F, highlightbackground=BGC,
                                       highlightcolor=FGC, insertbackground=FGC, selectbackground="#c4c4c4",
                                       selectforeground=FGC, undo="1", width=970, wrap="word")
         # Low pass filter scale
@@ -868,14 +913,14 @@ class MainWindow(Frame):
         self.lowpass_scale.set(LP_CUT)
         self.lowpass_scale.configure(activebackground=BGC, background=BGC, foreground=FGC, highlightbackground=BGC,
                                      highlightcolor=BGC, orient="horizontal", showvalue="0", troughcolor=dfgc,
-                                     resolution=10, label="Low Pass Filter (0Hz)", command=self.changelpvalue)
+                                     resolution=10, label="Low Pass Filter (0Hz)", highlightthickness=0, command=self.changelpvalue)
         # High pass filter scale
         self.highpass_scale = Scale(parent, from_=0, to=6000)
         self.highpass_scale.place(relx=0.6, rely=0.87, relwidth=0.39, height=40)
         self.highpass_scale.set(HP_CUT)
         self.highpass_scale.configure(activebackground=BGC, background=BGC, foreground=FGC, highlightbackground=BGC,
                                       highlightcolor=BGC, orient="horizontal", showvalue="0", troughcolor=dfgc,
-                                      resolution=10, label="High Pass Filter (3600Hz)", command=self.changehpvalue)
+                                      resolution=10, label="High Pass Filter (3600Hz)", highlightthickness=0, command=self.changehpvalue)
         # Modulation Combobox
         self.modulation_box = ttk.Combobox(parent, state="readonly")
         self.modulation_box.place(relx=0.755, rely=0.948, height=24, relwidth=0.06)
@@ -884,7 +929,7 @@ class MainWindow(Frame):
         self.modulation_box.bind("<<ComboboxSelected>>", self.modechoice)
         MODE = 'USB'
         # Adding some texts to console window at program start
-        self.writelog("This is " + VERSION + ", a GUI written for python 2.7 / Tk")
+        self.writelog("This is " + VERSION + ", a GUI written for python 2/3 + Tk")
         self.writelog("Thanks to Pierre (linkfanel) for his listing of available KiwiSDR nodes and their SNR values")
         self.writelog("Low Pass Cut Filter [" + str(LP_CUT) + "Hz] - High Pass Cut Filter [" + str(HP_CUT) + "Hz]")
         if AGC == 1:
@@ -946,7 +991,10 @@ class MainWindow(Frame):
         menubar.add_cascade(label="?", menu=menu_6)
         menu_6.add_command(label="Help", command=self.help)
         menu_6.add_command(label="About", command=self.about)
-        menu_6.add_command(label="Update check", command=self.checkversion)
+        menu_6.add_command(label="Update check", command=lambda *args: self.checkversion(source="from_menu"))
+
+        # Check if new version is available at program start
+        self.checkversion(source="at_start")
 
     def redraw(self):
         self.member1.redraw_map_cmd()
@@ -1051,25 +1099,27 @@ class MainWindow(Frame):
         """ Adapt the high pass slider according to moved low pass slider (should not be higher). """
         global LP_CUT
         # KiwiSDRStream().set_mod(mod='lsb', lc=0, hc=-500, freq=12345)
-        APP.gui.lowpass_scale.configure(label="Low Pass Filter (" + str(lpvalue) + "Hz)")
-        if APP.gui.lowpass_scale.get() >= APP.gui.highpass_scale.get():
-            APP.gui.highpass_scale.set(APP.gui.lowpass_scale.get() + 10)
-            LP_CUT = APP.gui.lowpass_scale.get()
-        else:
-            LP_CUT = APP.gui.lowpass_scale.get()
-        return LP_CUT
+        if 'APP' in globals():
+            APP.gui.lowpass_scale.configure(label="Low Pass Filter (" + str(lpvalue) + "Hz)")
+            if APP.gui.lowpass_scale.get() >= APP.gui.highpass_scale.get():
+                APP.gui.highpass_scale.set(APP.gui.lowpass_scale.get() + 10)
+                LP_CUT = APP.gui.lowpass_scale.get()
+            else:
+                LP_CUT = APP.gui.lowpass_scale.get()
+            return LP_CUT
 
     @staticmethod
     def changehpvalue(hpvalue):
         """ Adapt the low pass slider according to moved high pass slider (should not be lower). """
         global HP_CUT
-        APP.gui.highpass_scale.configure(label="High Pass Filter (" + str(hpvalue) + "Hz)")
-        if APP.gui.highpass_scale.get() <= APP.gui.lowpass_scale.get():
-            APP.gui.lowpass_scale.set(APP.gui.highpass_scale.get() - 10)
-            HP_CUT = APP.gui.highpass_scale.get()
-        else:
-            HP_CUT = APP.gui.highpass_scale.get()
-        return HP_CUT
+        if 'APP' in globals():
+            APP.gui.highpass_scale.configure(label="High Pass Filter (" + str(hpvalue) + "Hz)")
+            if APP.gui.highpass_scale.get() <= APP.gui.lowpass_scale.get():
+                APP.gui.lowpass_scale.set(APP.gui.highpass_scale.get() - 10)
+                HP_CUT = APP.gui.highpass_scale.get()
+            else:
+                HP_CUT = APP.gui.highpass_scale.get()
+            return HP_CUT
 
     @staticmethod
     def ctrla(event):
@@ -1217,8 +1267,9 @@ class MainWindow(Frame):
             if value == 5:
                 SaveCfg().save_cfg("guicolors", "main_b", color_n)
                 APP.gui.writelog("GUI background color is now " + color_n)
-                nums = ['0', '1', '2']
-                chg_list = [APP.gui.ctrl_backgd, APP.gui.label1, APP.gui.label2]
+                nums = ['0', '1', '2', '3', '4']
+                chg_list = [APP.gui.ctrl_backgd, APP.gui.lowpass_scale, APP.gui.highpass_scale, APP.gui.label1,
+                            APP.gui.label2]
                 for x, l in zip(nums, chg_list):
                     l.configure(background=color_n)
                     l.configure(foreground=GuiCanvas.get_font_color(color_n))
@@ -1265,7 +1316,7 @@ class MainWindow(Frame):
         CheckUpdate().start()
 
     @staticmethod
-    def checkversion():
+    def checkversion(source):
         """ Watch on github if a new version has been released (1st line of README.md parsed). """
         try:
             checkver = requests.get('https://raw.githubusercontent.com/llinkz/directKiwi/master/README.md', timeout=2)
@@ -1273,7 +1324,8 @@ class MainWindow(Frame):
             if float(gitsrctext[0][2:].split("v", 1)[1]) > float(VERSION.split("v", 1)[1][:4]):
                 tkMessageBox.showinfo(title="", message=str(gitsrctext[0][2:]) + " released !")
             else:
-                tkMessageBox.showinfo(title="", message="No update found.")
+                if source == "from_menu":
+                    tkMessageBox.showinfo(title="", message="No update found.")
         except (ImportError, requests.RequestException):
             print("Unable to verify version information. Sorry.")
 
@@ -1290,6 +1342,10 @@ class MainW(Tk, object):
 def on_closing():
     """ Actions to perform when software is closed using the top-right check button. """
     if tkMessageBox.askokcancel("Quit", "Do you want to quit?"):
+        try:  # to kill LISTEN MODE before quiting GUI
+            os.kill(CLIENT_PID, signal.SIGTERM)
+        except (NameError, OSError):
+            pass
         os.kill(os.getpid(), signal.SIGTERM)
         APP.destroy()
 
