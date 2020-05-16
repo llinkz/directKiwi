@@ -40,7 +40,7 @@ else:
     from tkinter.colorchooser import askcolor
 
 
-VERSION = "directKiwi v7.10"
+VERSION = "directKiwi v7.20"
 
 
 class Restart(object):
@@ -247,7 +247,7 @@ class StartKiwiSDRclient(threading.Thread):
 
     def run(self):
         """ DirectKiwi Main audio socket process. """
-        global LISTENMODE, CLIENT_PID
+        global LISTENMODE, CLIENT_PID, LP_CUT, HP_CUT, FREQUENCY
         try:
             if AGC == 1:
                 agc_array = False
@@ -260,13 +260,30 @@ class StartKiwiSDRclient(threading.Thread):
                 client_type = VERSION + ' [macOS]'
             else:
                 client_type = VERSION + ' [linux]'
+            if MODE == 'AM':  # 12000Hz BW
+                LP_CUT = -6000
+                HP_CUT = -6000
+            elif MODE == 'USB':
+                LP_CUT = APP.gui.lowpass_scale.get()
+                HP_CUT = APP.gui.highpass_scale.get()
+            elif MODE == 'LSB':
+                LP_CUT = 0 - APP.gui.highpass_scale.get()
+                HP_CUT = 0 - APP.gui.lowpass_scale.get()
+            elif MODE == 'CW':  # 500Hz BW , centered at 500Hz AF
+                FREQUENCY = float(FREQUENCY) - 0.5  # https://github.com/jks-prv/kiwiclient/pull/54
+                LP_CUT = 250
+                HP_CUT = 750
+            elif MODE == 'CWn':  # 60Hz BW , centered at 500Hz AF
+                FREQUENCY = float(FREQUENCY) - 0.5  # https://github.com/jks-prv/kiwiclient/pull/54
+                LP_CUT = 470
+                HP_CUT = 530
             socket_connect = subprocess.Popen([sys.executable, 'kiwiclient' + os.sep + 'kiwirecorder.py', '-s',
                                                HOST.rsplit("$", 4)[1].rsplit(":", 2)[0], '-p',
-                                               HOST.rsplit("$", 4)[1].rsplit(":", 2)[1], '-f', FREQUENCY, '-m', MODE,
-                                               '-L', str(LP_CUT), '-H', str(HP_CUT), '-u',
-                                               client_type.replace(' ', '_'),
-                                               '-q', '-a', (" ,".join(map(str, agc_array)) if agc_array else ''),
-                                               '--log=debug'], stdout=PIPE, shell=False)
+                                               HOST.rsplit("$", 4)[1].rsplit(":", 2)[1], '-f', str(FREQUENCY), '-m',
+                                               MODE, '-L', str(LP_CUT), '-H', str(HP_CUT), '-u',
+                                               client_type.replace(' ', '_'), '-q', '-a',
+                                               (" ,".join(map(str, agc_array)) if agc_array else ''), '--log=debug'],
+                                              stdout=PIPE, shell=False)
             CLIENT_PID = socket_connect.pid
             APP.gui.stop_button.configure(state="normal")
             LISTENMODE = True
@@ -604,10 +621,11 @@ class GuiCanvas(Frame):
                     except NameError:
                         pass
                 APP.gui.writelog(" ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ ")
-                APP.gui.writelog("[ " + n_field[1].rsplit(":", 2)[0] + " / " + FREQUENCY + " kHz / " + str(
+                APP.gui.writelog("[ " + n_field[1].rsplit(":", 2)[0] + " / " + str(FREQUENCY) + " kHz / " + str(
                     MODE).upper() + " / " + str(HP_CUT - LP_CUT) + "Hz ]")
-                APP.title(str(VERSION) + " - [ " + n_field[1].rsplit(":", 2)[0] + " / " + FREQUENCY + " kHz / " + str(
-                    MODE).upper() + " / " + str(HP_CUT - LP_CUT) + "Hz ]")
+                APP.title(
+                    str(VERSION) + " - [ " + n_field[1].rsplit(":", 2)[0] + " / " + str(FREQUENCY) + " kHz / " + str(
+                        MODE).upper() + " / " + str(HP_CUT - LP_CUT) + "Hz ]")
 
     def create_node_menu(self, kiwinodetag, popx, popy, menu):
         n_field = kiwinodetag.rsplit("$", 4)
@@ -1003,7 +1021,12 @@ class MainWindow(Frame):
         """ Reading the typed FREQUENCY in the FREQUENCY entry box. """
         global MODE
         MODE = self.modulation_box.get()
-        self.writelog("Modulation: " + str(MODE))
+        if MODE == 'LSB':
+            self.lowpass_scale.configure(label="High Pass Filter (" + str(APP.gui.lowpass_scale.get()) + "Hz)")
+            self.highpass_scale.configure(label="Low Pass Filter (" + str(APP.gui.highpass_scale.get()) + "Hz)")
+        else:
+            self.lowpass_scale.configure(label="Low Pass Filter (" + str(APP.gui.lowpass_scale.get()) + "Hz)")
+            self.highpass_scale.configure(label="High Pass Filter (" + str(APP.gui.highpass_scale.get()) + "Hz)")
 
     def show_demod_config(self):
         """ KiwiSDR demodulation parameters window creation. """

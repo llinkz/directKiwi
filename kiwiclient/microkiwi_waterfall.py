@@ -126,7 +126,7 @@ while time < length:
         processfailed = True
         break
     if b'W/F' in tmp:  # this is one waterfall line
-        tmp = tmp[16:]  # remove some header from each msg
+        tmp = tmp[16:].replace(b"7", b"\xa0")  # remove some header from each msg & bug fix for blocked freq ranges
         print("received sample")
         if options['verbosity']:
             print(time),
