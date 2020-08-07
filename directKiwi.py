@@ -260,9 +260,12 @@ class StartKiwiSDRclient(threading.Thread):
                 client_type = VERSION + ' [macOS]'
             else:
                 client_type = VERSION + ' [linux]'
-            if MODE == 'AM':  # 12000Hz BW
-                LP_CUT = -6000
-                HP_CUT = 6000
+            if MODE == 'AM':  # 9800Hz BW (default)
+                LP_CUT = -4900
+                HP_CUT = 4900
+            elif MODE == 'AMn':
+                LP_CUT = -2500
+                HP_CUT = 2500                
             elif MODE == 'USB':
                 LP_CUT = APP.gui.lowpass_scale.get()
                 HP_CUT = APP.gui.highpass_scale.get()
