@@ -262,7 +262,7 @@ class StartKiwiSDRclient(threading.Thread):
                 client_type = VERSION + ' [linux]'
             if MODE == 'AM':  # 12000Hz BW
                 LP_CUT = -6000
-                HP_CUT = -6000
+                HP_CUT = 6000
             elif MODE == 'USB':
                 LP_CUT = APP.gui.lowpass_scale.get()
                 HP_CUT = APP.gui.highpass_scale.get()
