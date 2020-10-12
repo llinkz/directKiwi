@@ -111,9 +111,10 @@ Install Python 2 or 3, in terminal : `brew install python@#`
 * v7.00 : directKiwi now uses same GUI as directTDoA - python 3 compatibility added - bug fixed on the map update due to some format modifications on the website sources
 * v7.10 : Restart GUI routine modified + directKiwi.bat & setup.bat added for Windows users + bug fix that caused the map to move suddenly far away when selecting a node (problem only noticed on Windows OS) + added functionality to manage the overlapping of icons on the map. Now when you click near a cluster of multiple nodes, a menu will appear and allow you to choose the one you really want (to listen or to display node menu) + bug fixes
 * v7.20 : Bug fixes for demodulation bandpass filters + modification on microkiwi_waterfall.py, to deal with nodes that have blocked frequency ranges
+* v7.21 : Bug fixes
 
 Enjoy
 
 linkz
 
-May 2020 update
+October 2020 update
