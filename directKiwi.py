@@ -40,7 +40,7 @@ else:
     from tkinter.colorchooser import askcolor
 
 
-VERSION = "directKiwi v7.20"
+VERSION = "directKiwi v7.21"
 
 
 class Restart(object):
@@ -260,9 +260,12 @@ class StartKiwiSDRclient(threading.Thread):
                 client_type = VERSION + ' [macOS]'
             else:
                 client_type = VERSION + ' [linux]'
-            if MODE == 'AM':  # 12000Hz BW
-                LP_CUT = -6000
-                HP_CUT = -6000
+            if MODE == 'AM':  # 9800Hz BW
+                LP_CUT = -5900
+                HP_CUT = 5900
+            elif MODE == 'AMn':
+                LP_CUT = -2500
+                HP_CUT = 2500
             elif MODE == 'USB':
                 LP_CUT = APP.gui.lowpass_scale.get()
                 HP_CUT = APP.gui.highpass_scale.get()
@@ -581,31 +584,29 @@ class GuiCanvas(Frame):
                 chktimeout = 2  # timeout of the node check
                 checkthenode = requests.get("http://" + n_field[1] + "/status", timeout=chktimeout)
                 i_node = []
-                infonodes = checkthenode.text.split("\n")
-                if len(infonodes) == 22 and "status" in infonodes[0]:
-                    try:
-                        for line in checkthenode.text.splitlines():
-                            i_node.append(line.rsplit("=", 1)[1])
-                        # i_node = each parameter of the retrieved "address:port/status" webpage lines
-                        # 0 = status (private / public)    10 = good received GPS sats
-                        # 1 = offline (no / yes)           11 = total GPS fixes
-                        # 2 = name                         12 = GPS fixes per minute (max = 30)
-                        # 3 = sdr_hw                       13 = GPS fixes per hour
-                        # 4 = op_email                     14 = TDoA id
-                        # 5 = bands (KiwiSDR freq range)   15 = TDoA receiver slots
-                        # 6 = users                        16 = Receiver altitude
-                        # 7 = max users                    17 = Receiver location
-                        # 8 = avatar ctime                 18 = Software version
-                        # 9 = gps coordinates              19 = Antenna description
-                        # 20 = KiwiSDR uptime (in sec)
-                        if i_node[6] == i_node[7]:  # users Vs. users_max
-                            APP.gui.writelog(" " + n_field[1].rsplit(":", 2)[0] + " is full.")
-                        elif infonodes[1].rsplit("=", 2)[1] == "yes":  # offline=no/yes
-                            APP.gui.writelog(" " + n_field[1].rsplit(":", 2)[0] + " is offline.")
-                        else:
-                            permit_web = "yes"
-                    except IndexError as wrong_status:
-                        APP.gui.writelog("Sorry " + n_field[1].rsplit(":", 2)[0] + " is unreachable.")
+                try:
+                    for line in checkthenode.text.splitlines():
+                        i_node.append(line.rsplit("=", 1)[1])
+                    # i_node = each parameter of the retrieved "address:port/status" webpage lines
+                    # 0 = status (private / public)    10 = good received GPS sats
+                    # 1 = offline (no / yes)           11 = total GPS fixes
+                    # 2 = name                         12 = GPS fixes per minute (max = 30)
+                    # 3 = sdr_hw                       13 = GPS fixes per hour
+                    # 4 = op_email                     14 = TDoA id
+                    # 5 = bands (KiwiSDR freq range)   15 = TDoA receiver slots
+                    # 6 = users                        16 = Receiver altitude
+                    # 7 = max users                    17 = Receiver location
+                    # 8 = avatar ctime                 18 = Software version
+                    # 9 = gps coordinates              19 = Antenna description
+                    # 20 = KiwiSDR uptime (in sec)
+                    if i_node[6] == i_node[7]:  # users Vs. users_max
+                        APP.gui.writelog(" " + n_field[1].rsplit(":", 2)[0] + " is full.")
+                    elif i_node[1] == "yes":  # offline=no/yes
+                        APP.gui.writelog(" " + n_field[1].rsplit(":", 2)[0] + " is offline.")
+                    else:
+                        permit_web = "yes"
+                except IndexError as wrong_status:
+                    APP.gui.writelog("Sorry " + n_field[1].rsplit(":", 2)[0] + " is unreachable.")
             except requests.RequestException:
                 APP.gui.writelog("Sorry " + n_field[1].rsplit(":", 2)[0] + " is unreachable.")
             if permit_web == "yes":
