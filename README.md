@@ -1,4 +1,4 @@
-# directKiwi v7.20
+# directKiwi v7.21
 
 This piece of software is JUST a GUI written for Python 2/3 designed to fast connect audio socket to KiwiSDR servers around the world using modified versions @ https://github.com/dev-zzo/kiwiclient or related fork @ https://github.com/jks-prv/kiwiclient
 
