@@ -1,4 +1,4 @@
-#!/usr/bin/python
+#!/usr/bin/python3
 # -*- coding: utf-8 -*-
 """ DirectKiwi python code. """
 
@@ -902,8 +902,8 @@ class MainWindow(Frame):
 
         # Frequency entry field
         self.freq_input = Entry(parent)
-        self.freq_input.place(relx=0.65, rely=0.948, height=23, width=70)
-        self.freq_input.configure(bg="white", font="TkFixedFont", insertbackground=FGC, width=214)
+        self.freq_input.place(relx=0.65, rely=0.948, height=23, width=80)
+        self.freq_input.configure(bg=BGC, fg=FGC, font="TkFixedFont", insertbackground=FGC, width=218)
         self.freq_input.bind('<Control-a>', self.ctrla)
         self.freq_input.focus_set()
 
@@ -912,14 +912,14 @@ class MainWindow(Frame):
         self.stop_button.place(relx=0.828, rely=0.95, height=24, width=80)
         self.stop_button.configure(activebackground=BGC, activeforeground=FGC, bg="red", disabledforeground=dfgc,
                                    fg="black", highlightbackground=BGC, highlightcolor=FGC, pady="0",
-                                   text="Stop Listen", command=lambda *args: [StopListen().run(), FillMapWithNodes(
+                                   text="Stop", command=lambda *args: [StopListen().run(), FillMapWithNodes(
                                     self.member1).node_selection_inactiveall()], state="disabled")
         # Update button
         self.update_button = Button(parent)
         self.update_button.place(relx=0.915, rely=0.95, height=24, width=80)
         self.update_button.configure(activebackground=BGC, activeforeground=FGC, bg="orange", disabledforeground=dfgc,
                                      fg="black", highlightbackground=BGC, highlightcolor=FGC, pady="0",
-                                     text="update map", command=self.runupdate, state="normal")
+                                     text="Update", command=self.runupdate, state="normal")
         # Console window
         self.console_window = Text(parent)
         self.console_window.place(relx=0.000, rely=0.8, relheight=0.2, relwidth=0.590)
@@ -932,14 +932,14 @@ class MainWindow(Frame):
         self.lowpass_scale.set(LP_CUT)
         self.lowpass_scale.configure(activebackground=BGC, background=BGC, foreground=FGC, highlightbackground=BGC,
                                      highlightcolor=BGC, orient="horizontal", showvalue="0", troughcolor=dfgc,
-                                     resolution=10, label="Low Pass Filter (0Hz)", highlightthickness=0, command=self.changelpvalue)
+                                     resolution=10, label="Low Pass Filter (" + str(LP_CUT) + "Hz)", highlightthickness=0, command=self.changelpvalue)
         # High pass filter scale
         self.highpass_scale = Scale(parent, from_=0, to=6000)
         self.highpass_scale.place(relx=0.6, rely=0.87, relwidth=0.39, height=40)
         self.highpass_scale.set(HP_CUT)
         self.highpass_scale.configure(activebackground=BGC, background=BGC, foreground=FGC, highlightbackground=BGC,
                                       highlightcolor=BGC, orient="horizontal", showvalue="0", troughcolor=dfgc,
-                                      resolution=10, label="High Pass Filter (3600Hz)", highlightthickness=0, command=self.changehpvalue)
+                                      resolution=10, label="High Pass Filter (" + str(HP_CUT) + "Hz)", highlightthickness=0, command=self.changehpvalue)
         # Modulation Combobox
         self.modulation_box = ttk.Combobox(parent, state="readonly")
         self.modulation_box.place(relx=0.755, rely=0.948, height=24, relwidth=0.06)
@@ -948,8 +948,7 @@ class MainWindow(Frame):
         self.modulation_box.bind("<<ComboboxSelected>>", self.modechoice)
         MODE = 'USB'
         # Adding some texts to console window at program start
-        self.writelog("This is " + VERSION + ", a GUI written for python 2/3 + Tk")
-        self.writelog("Thanks to Pierre (linkfanel) for his listing of available KiwiSDR nodes and their SNR values")
+        self.writelog("DirectKiwi " + VERSION)
         self.writelog("Low Pass Cut Filter [" + str(LP_CUT) + "Hz] - High Pass Cut Filter [" + str(HP_CUT) + "Hz]")
         if AGC == 1:
             self.writelog("AGC is [ON]")
@@ -959,8 +958,8 @@ class MainWindow(Frame):
         else:
             self.writelog("MGC is [ON] - Gain [" + str(MGAIN) + "dB] - Hang [ON] - Threshold [" + str(
                 THRESHOLD) + "dB] - Slope [" + str(SLOPE) + "dB] - Decay [" + str(DECAY).replace("\n", "") + "ms]")
-        self.writelog("There are [" + str(NODE_COUNT) + "] KiwiSDRs in the db. Have fun !")
-        self.writelog("LEFT click : Start listening -=- RIGHT click : Get informations")
+        self.writelog(str(NODE_COUNT) + " KiwiSDRs listed.")
+        self.writelog("LEFT click to start listening; RIGHT click for information.")
 
         # GUI topbar menus
         menubar = Menu(self)
@@ -1198,7 +1197,7 @@ class MainWindow(Frame):
     Thanks to Pierre Ynard (linkfanel) for the KiwiSDR network node listing + SNR used as source for GUI map update
     And.. Thanks to all KiwiSDR hosters...
 
-    linkz 
+    linkz
 
     feedback, features request or help : contact me at ounaid at gmail dot com or IRC freenode #wunclub / #priyom
     """, width=1000, font="TkFixedFont 8", bg="white", anchor="center")
