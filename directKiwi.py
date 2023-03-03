@@ -261,25 +261,34 @@ class StartKiwiSDRclient(threading.Thread):
             else:
                 client_type = VERSION + ' [linux]'
             if MODE == 'AM':  # 9800Hz BW
-                LP_CUT = -5900
-                HP_CUT = 5900
-            elif MODE == 'AMn':
+                LP_CUT = -5000
+                HP_CUT = 5000
+            elif MODE == 'AMn':  # 5000Hz BW
                 LP_CUT = -2500
                 HP_CUT = 2500
+            elif MODE == 'SAM':  # 9800Hz BW
+                LP_CUT = -5000
+                HP_CUT = 5000
+            elif MODE == 'SAU':  # 5000Hz BW
+                LP_CUT = -30
+                HP_CUT = 5000
+            elif MODE == 'SAL':  # 5000Hz BW
+                LP_CUT = -5000
+                HP_CUT = 30
             elif MODE == 'USB':
                 LP_CUT = APP.gui.lowpass_scale.get()
                 HP_CUT = APP.gui.highpass_scale.get()
             elif MODE == 'LSB':
                 LP_CUT = 0 - APP.gui.highpass_scale.get()
                 HP_CUT = 0 - APP.gui.lowpass_scale.get()
-            elif MODE == 'CW':  # 500Hz BW , centered at 500Hz AF
-                FREQUENCY = float(FREQUENCY) - 0.5  # https://github.com/jks-prv/kiwiclient/pull/54
-                LP_CUT = 250
-                HP_CUT = 750
-            elif MODE == 'CWn':  # 60Hz BW , centered at 500Hz AF
-                FREQUENCY = float(FREQUENCY) - 0.5  # https://github.com/jks-prv/kiwiclient/pull/54
-                LP_CUT = 470
-                HP_CUT = 530
+            elif MODE == 'CW':  # 500Hz BW , centered at 750Hz AF
+                FREQUENCY = float(FREQUENCY) - 0.75  # https://github.com/jks-prv/kiwiclient/pull/54
+                LP_CUT = 500
+                HP_CUT = 1000
+            elif MODE == 'CWn':  # 200Hz BW , centered at 750Hz AF
+                FREQUENCY = float(FREQUENCY) - 0.75  # https://github.com/jks-prv/kiwiclient/pull/54
+                LP_CUT = 550
+                HP_CUT = 950
             socket_connect = subprocess.Popen([sys.executable, 'kiwiclient' + os.sep + 'kiwirecorder.py', '-s',
                                                HOST.rsplit("$", 4)[1].rsplit(":", 2)[0], '-p',
                                                HOST.rsplit("$", 4)[1].rsplit(":", 2)[1], '-f', str(FREQUENCY), '-m',
@@ -894,15 +903,15 @@ class MainWindow(Frame):
 
         # Control Legend
         self.label1 = Label(parent)
-        self.label1.place(relx=0.605, rely=0.95)
+        self.label1.place(relx=0.600, rely=0.95)
         self.label1.configure(bg=BGC, font="TkFixedFont", fg=FGC, text="Freq:")
         self.label2 = Label(parent)
-        self.label2.place(relx=0.72, rely=0.95)
+        self.label2.place(relx=0.725, rely=0.95)
         self.label2.configure(bg=BGC, font="TkFixedFont", fg=FGC, text="kHz")
 
         # Frequency entry field
         self.freq_input = Entry(parent)
-        self.freq_input.place(relx=0.65, rely=0.948, height=23, width=80)
+        self.freq_input.place(relx=0.643, rely=0.948, height=23, width=80)
         self.freq_input.configure(bg=BGC, fg=FGC, font="TkFixedFont", insertbackground=FGC, width=218)
         self.freq_input.bind('<Control-a>', self.ctrla)
         self.freq_input.focus_set()
@@ -943,7 +952,7 @@ class MainWindow(Frame):
         # Modulation Combobox
         self.modulation_box = ttk.Combobox(parent, state="readonly")
         self.modulation_box.place(relx=0.755, rely=0.948, height=24, relwidth=0.06)
-        self.modulation_box.configure(font="TkTextFont", values=["USB", "LSB", "AM", "AMn", "CW", "CWn"])
+        self.modulation_box.configure(font="TkTextFont", values=["USB", "LSB", "AM", "AMn", "SAM", "SAU", "SAL", "CW", "CWn"])
         self.modulation_box.current(0)
         self.modulation_box.bind("<<ComboboxSelected>>", self.modechoice)
         MODE = 'USB'
