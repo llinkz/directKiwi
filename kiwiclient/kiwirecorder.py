@@ -17,6 +17,7 @@ for i in range(len(sounddevice.query_devices())):
         sounddevice.default.device = i
         stream = sounddevice.OutputStream(12000, 2048, channels=1, dtype='int16')
         stream.start()
+        break
     except Exception as e:
         print("Exception with device", i)
         print(e)
