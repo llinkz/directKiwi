@@ -1,7 +1,9 @@
 # -*- python -*-
 
-import collections
-from collections.abc import Iterator
+try:
+    from collections import Iterator
+except ImportError:
+    from collections.abc import Iterator
 import struct
 import numpy as np
 from chunk import Chunk
