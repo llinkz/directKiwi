@@ -12,8 +12,14 @@ from optparse import OptionParser
 from optparse import OptionGroup
 import sounddevice
 
-stream = sounddevice.OutputStream(12000, 2048, channels=1, dtype='int16')
-stream.start()
+for i in range(len(sounddevice.query_devices())):
+    try:
+        sounddevice.default.device = i
+        stream = sounddevice.OutputStream(12000, 2048, channels=1, dtype='int16')
+        stream.start()
+    except Exception as e:
+        print("Exception with device", i)
+        print(e)
 
 HAS_RESAMPLER = True
 try:
