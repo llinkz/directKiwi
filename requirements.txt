@@ -1,0 +1,6 @@
+requests
+Pillow
+numpy
+sounddevice
+matplotlib
+libsamplerate
